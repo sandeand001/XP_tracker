@@ -47,6 +47,16 @@ body {
   min-height: 100vh;
 }
 
+/* Arrival after page-turn: body starts hidden (set by head script),
+   then this class triggers a smooth fade-in */
+body.pt-arrive {
+  opacity: 0 !important;
+}
+body.pt-fade-in {
+  opacity: 1 !important;
+  transition: opacity 0.35s ease-out !important;
+}
+
 /* ── Header ── */
 #app-header {
   background: linear-gradient(135deg, #3D2B1F 0%, #5D4037 100%);

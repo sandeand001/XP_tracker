@@ -17,6 +17,18 @@
   'use strict';
 
   function init() {
+    /* ARRIVAL: if we came from a page turn, fade the body in smoothly.
+       The <head> script already set body to opacity:0 before first paint. */
+    if (sessionStorage.getItem('ptArrival')) {
+      sessionStorage.removeItem('ptArrival');
+      // Wait for the page to be fully rendered before fading in
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.body.classList.add('pt-fade-in');
+        });
+      });
+    }
+
     let navigating = false;
 
     document.addEventListener('click', (e) => {
@@ -183,6 +195,7 @@
           /* Small delay so user sees the destination fully revealed */
           setTimeout(() => {
             destLayer.remove();
+            sessionStorage.setItem('ptArrival', '1');
             window.location.href = href;
             resolve();
           }, 120);
