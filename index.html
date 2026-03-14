@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script>
     // Apply saved theme + layout ASAP to prevent flash
-    (function(){var d=document.documentElement;d.setAttribute('data-theme',localStorage.getItem('xp_theme')||'celestial-void');d.setAttribute('data-layout',localStorage.getItem('xp_layout')||'arcane-grid')})();
+    (function(){var d=document.documentElement;d.setAttribute('data-theme',localStorage.getItem('xp_theme')||'celestial-void');d.setAttribute('data-layout',localStorage.getItem('xp_layout')||'grand-hall')})();
   </script>
 </head>
 <body class="landing-body">
@@ -254,20 +254,25 @@
         <h3>🏛️ Layout Style</h3>
         <p class="help-text">Choose how content is arranged. Mix and match with any color theme.</p>
         <div class="theme-picker-grid" id="layout-picker">
-          <div class="layout-card active" data-layout="arcane-grid">
-            <span class="theme-card-icon">⚔️</span>
-            <span class="layout-card-name">Arcane Grid</span>
-            <span class="theme-card-subtitle">Glass Cards</span>
-          </div>
-          <div class="layout-card" data-layout="ancient-scroll">
-            <span class="theme-card-icon">📜</span>
-            <span class="layout-card-name">Ancient Scroll</span>
-            <span class="theme-card-subtitle">Single Column</span>
-          </div>
-          <div class="layout-card" data-layout="grand-hall">
+          <div class="layout-card active" data-layout="grand-hall">
             <span class="theme-card-icon">🏛️</span>
             <span class="layout-card-name">Grand Hall</span>
             <span class="theme-card-subtitle">Spacious &amp; Ornate</span>
+          </div>
+          <div class="layout-card" data-layout="fae-wilds">
+            <span class="theme-card-icon">🌿</span>
+            <span class="layout-card-name">Fae Wilds</span>
+            <span class="theme-card-subtitle">Whimsical &amp; Organic</span>
+          </div>
+          <div class="layout-card" data-layout="iron-codex">
+            <span class="theme-card-icon">⚙️</span>
+            <span class="layout-card-name">Iron Codex</span>
+            <span class="theme-card-subtitle">Terminal &amp; Data-Dense</span>
+          </div>
+          <div class="layout-card" data-layout="neon-forge">
+            <span class="theme-card-icon">🔥</span>
+            <span class="layout-card-name">Neon Forge</span>
+            <span class="theme-card-subtitle">Modern &amp; Bold</span>
           </div>
         </div>
       </div>

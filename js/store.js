@@ -105,7 +105,7 @@ export function saveTheme(themeId) {
 
 // ── Layout ──
 export function getLayout() {
-  return localStorage.getItem(KEYS.LAYOUT) || 'arcane-grid';
+  return localStorage.getItem(KEYS.LAYOUT) || 'grand-hall';
 }
 export function saveLayout(layoutId) {
   localStorage.setItem(KEYS.LAYOUT, layoutId);
