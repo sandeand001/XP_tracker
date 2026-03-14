@@ -426,7 +426,7 @@ async function init() {
 
   // ── Nav link clicks ──
   document.addEventListener('click', (e) => {
-    const link = e.target.closest('[data-page]');
+    const link = e.target.closest('a[data-page], button[data-page]');
     if (!link) return;
     e.preventDefault();
     const page = link.dataset.page;
