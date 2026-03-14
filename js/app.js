@@ -1,5 +1,5 @@
 // ============================================================
-// app.js — Main entry point: wires UI, events, page-based nav
+// app.js — SPA entry point: wires UI, events, section routing
 // ============================================================
 
 import * as Store from './store.js';
@@ -8,10 +8,79 @@ import * as UI from './ui.js';
 import { GUILDS } from './config.js';
 import { initFirebase, pullFromCloud, listenForChanges } from './firebase-sync.js';
 
-// ── Detect current page from data-page attribute ──
+// ── Detect current page from active section ──
 function getCurrentPage() {
-  const section = document.querySelector('.page-content[data-page]');
-  return section ? section.dataset.page : 'tracker';
+  const section = document.querySelector('.page-content.active[data-page]');
+  return section ? section.dataset.page : 'home';
+}
+
+// ── SPA Navigation — swap visible sections ──
+function navigateTo(page) {
+  const allSections = document.querySelectorAll('.page-content[data-page]');
+  const allNavBtns = document.querySelectorAll('#main-nav .nav-btn[data-page]');
+
+  // Hide all sections, show target
+  allSections.forEach(s => {
+    if (s.dataset.page === page) {
+      s.classList.add('active');
+    } else {
+      s.classList.remove('active');
+    }
+  });
+
+  // Update nav active state
+  allNavBtns.forEach(btn => {
+    if (btn.dataset.page === page) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Toggle landing-body class for dark cosmic theme vs parchment
+  const isHome = (page === 'home');
+  document.body.classList.toggle('landing-body', isHome);
+  document.getElementById('app-main').classList.toggle('landing-main', isHome);
+
+  // Show/hide starfield canvas
+  const starfield = document.getElementById('starfield');
+  if (starfield) starfield.style.display = isHome ? '' : 'none';
+
+  // Tell landing.js to start/stop
+  window.dispatchEvent(new CustomEvent('spa:pageChanged', { detail: { page } }));
+
+  // Update URL hash (without triggering hashchange navigation)
+  history.replaceState(null, '', '#' + page);
+
+  // Update document title
+  const titles = {
+    home: '✨ Classroom XP Tracker',
+    tracker: '📊 XP Tracker',
+    daily: '📝 Daily Checklist',
+    behavior: '⚖️ Behavior Tracker',
+    leaderboard: '🏆 Leaderboard',
+    currency: '🪙 Currency & Shop',
+    log: '📜 XP Log',
+    settings: '⚙️ Settings'
+  };
+  document.title = titles[page] || '✨ Classroom XP Tracker';
+
+  // Render the page content
+  renderPage(page);
+}
+
+// ── Render the correct page content ──
+function renderPage(page) {
+  switch (page) {
+    case 'tracker': UI.renderTracker(); break;
+    case 'daily': UI.renderDaily(); break;
+    case 'behavior': UI.renderBehavior(); break;
+    case 'leaderboard': UI.renderLeaderboard(); break;
+    case 'currency': UI.renderCurrency(); break;
+    case 'log': UI.renderLog(); break;
+    case 'settings': UI.renderSettings(); break;
+    // home doesn't need a render call
+  }
 }
 
 // ── Add Student ──
@@ -36,7 +105,6 @@ function initAddStudent() {
           if (!name) { UI.toast('Please enter a name', 'error'); return; }
           const added = Store.addStudent(name, guild);
           if (!added) { UI.toast('Student already exists', 'error'); return; }
-          // Recompute so new student has correct level data
           Engine.recomputeAllProgress();
           UI.renderTracker();
           UI.toast(`${name} added!`, 'success');
@@ -45,7 +113,6 @@ function initAddStudent() {
       { label: 'Cancel', class: 'btn-secondary', action: () => {} }
     ]);
 
-    // Allow Enter key to submit
     setTimeout(() => {
       const input = document.getElementById('new-student-name');
       if (input) input.addEventListener('keydown', e => {
@@ -113,7 +180,6 @@ function initDailyButtons() {
     document.querySelectorAll('#daily-body input[type="checkbox"]').forEach(cb => {
       cb.checked = true;
     });
-    // Trigger save
     document.querySelector('#daily-body .daily-input')?.dispatchEvent(new Event('change'));
   });
 
@@ -124,10 +190,8 @@ function initDailyButtons() {
     document.querySelector('#daily-body .daily-input')?.dispatchEvent(new Event('change'));
   });
 
-  // Bonus input changes
   ['bonusA', 'bonusB', 'bonusC', 'bonusD'].forEach(id => {
     document.getElementById(id).addEventListener('input', () => {
-      // Trigger re-save of daily state
       document.querySelector('#daily-body .daily-input')?.dispatchEvent(new Event('change'));
     });
   });
@@ -173,7 +237,6 @@ function initSettingsButtons() {
     UI.toast('Configuration saved!', 'success');
   });
 
-  // Import tracker CSV
   document.getElementById('btn-import-tracker').addEventListener('click', () => {
     const file = document.getElementById('import-tracker').files[0];
     if (!file) { UI.toast('Select a CSV file first', 'error'); return; }
@@ -190,7 +253,6 @@ function initSettingsButtons() {
     reader.readAsText(file);
   });
 
-  // Import XP Log CSV
   document.getElementById('btn-import-log').addEventListener('click', () => {
     const file = document.getElementById('import-log').files[0];
     if (!file) { UI.toast('Select a CSV file first', 'error'); return; }
@@ -206,14 +268,12 @@ function initSettingsButtons() {
     reader.readAsText(file);
   });
 
-  // Export all JSON
   document.getElementById('btn-export-all').addEventListener('click', () => {
     const json = Store.exportAllData();
     downloadFile(json, `xp-tracker-backup-${Store.todayStr()}.json`, 'application/json');
     UI.toast('Full backup exported', 'success');
   });
 
-  // Import all JSON
   document.getElementById('btn-import-json').addEventListener('click', () => {
     document.getElementById('import-json-file').click();
   });
@@ -234,7 +294,6 @@ function initSettingsButtons() {
     reader.readAsText(file);
   });
 
-  // Reset all data
   document.getElementById('btn-reset-all').addEventListener('click', () => {
     UI.showModal('🗑️ Reset All Data', `
       <p style="color:#B71C1C;font-weight:700">⚠️ This will permanently delete ALL data:</p>
@@ -301,66 +360,52 @@ async function init() {
 
   initModal();
 
+  // Initialize ALL page event handlers upfront (they all exist in the DOM)
+  initAddStudent();
+  initProcessXP();
+  initRecompute();
+  initDailyButtons();
+  initBehaviorButtons();
+  initLogButtons();
+  initSettingsButtons();
+
   // Initialize Firebase and sync cloud data
   const firebaseOk = await initFirebase();
   if (firebaseOk) {
     const updated = await pullFromCloud();
     if (updated) {
-      // Cloud data was newer — recompute progress from synced data
       Engine.recomputeAllProgress();
     }
   }
 
-  const page = getCurrentPage();
+  // ── Nav link clicks ──
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-page]');
+    if (!link) return;
+    e.preventDefault();
+    const page = link.dataset.page;
+    if (page && page !== getCurrentPage()) {
+      navigateTo(page);
+    }
+  });
 
-  // Render page content
-  switch (page) {
-    case 'home':
-      // Landing page — no interactive init needed
-      break;
-    case 'tracker':
-      initAddStudent();
-      initProcessXP();
-      initRecompute();
-      UI.renderTracker();
-      break;
-    case 'daily':
-      initDailyButtons();
-      UI.renderDaily();
-      break;
-    case 'behavior':
-      initBehaviorButtons();
-      UI.renderBehavior();
-      break;
-    case 'leaderboard':
-      UI.renderLeaderboard();
-      break;
-    case 'currency':
-      UI.renderCurrency();
-      break;
-    case 'log':
-      initLogButtons();
-      UI.renderLog();
-      break;
-    case 'settings':
-      initSettingsButtons();
-      UI.renderSettings();
-      break;
-  }
+  // ── Browser back/forward ──
+  window.addEventListener('hashchange', () => {
+    const hash = location.hash.replace('#', '') || 'home';
+    if (hash !== getCurrentPage()) {
+      navigateTo(hash);
+    }
+  });
+
+  // Determine initial page from URL hash
+  const initialPage = location.hash.replace('#', '') || 'home';
+  navigateTo(initialPage);
 
   // Listen for real-time changes from other devices
   if (firebaseOk) {
     listenForChanges((changedKey) => {
       // Re-render current page when data changes from another device
-      switch (page) {
-        case 'tracker': UI.renderTracker(); break;
-        case 'daily': UI.renderDaily(); break;
-        case 'behavior': UI.renderBehavior(); break;
-        case 'leaderboard': UI.renderLeaderboard(); break;
-        case 'currency': UI.renderCurrency(); break;
-        case 'log': UI.renderLog(); break;
-        case 'settings': UI.renderSettings(); break;
-      }
+      renderPage(getCurrentPage());
     });
   }
 }

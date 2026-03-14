@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   Landing Page — Starfield + Scroll Fade
+   Landing Page — Starfield + Scroll Fade (SPA)
    ═══════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -13,12 +13,15 @@
   const STAR_COUNT = 260;
   const SHOOTING_INTERVAL = 4000;   // ms between shooting stars
 
+  let animationId = null;
+  let shooterInterval = null;
+  let isRunning = false;
+
   function resize() {
     canvas.width  = window.innerWidth;
     canvas.height = Math.max(document.documentElement.scrollHeight, window.innerHeight);
   }
-  window.addEventListener('resize', () => { resize(); seedStars(); });
-  resize();
+  window.addEventListener('resize', () => { if (isRunning) { resize(); seedStars(); } });
 
   function seedStars() {
     stars.length = 0;
@@ -30,13 +33,11 @@
         baseAlpha: Math.random() * 0.6 + 0.25,
         twinkleSpeed: Math.random() * 0.003 + 0.001,
         twinkleOffset: Math.random() * Math.PI * 2,
-        // slight colour tint
         hue: Math.random() < 0.15 ? 45 : Math.random() < 0.3 ? 260 : 0,
         sat: Math.random() < 0.3 ? 40 : 0
       });
     }
   }
-  seedStars();
 
   /* Shooting stars */
   const shooters = [];
@@ -51,7 +52,6 @@
       decay: Math.random() * 0.015 + 0.01
     });
   }
-  setInterval(spawnShooter, SHOOTING_INTERVAL);
 
   /* Nebula blobs — soft colour washes */
   const nebulae = [
@@ -100,7 +100,6 @@
     /* Shooting stars */
     for (let i = shooters.length - 1; i >= 0; i--) {
       const sh = shooters[i];
-      // tail trails behind: from behind (-len) to current pos
       const tailX = sh.x - Math.cos(sh.angle) * sh.len;
       const tailY = sh.y - Math.sin(sh.angle) * sh.len;
       const grad = ctx.createLinearGradient(tailX, tailY, sh.x, sh.y);
@@ -119,27 +118,20 @@
       if (sh.alpha <= 0) shooters.splice(i, 1);
     }
 
-    requestAnimationFrame(drawStars);
+    animationId = requestAnimationFrame(drawStars);
   }
-  requestAnimationFrame(drawStars);
 
   /* Re-size canvas when content changes height */
-  const ro = new ResizeObserver(() => {
-    const newH = Math.max(document.documentElement.scrollHeight, window.innerHeight);
-    if (Math.abs(canvas.height - newH) > 50) {
-      canvas.height = newH;
-      seedStars();
-    }
-  });
-  ro.observe(document.documentElement);
+  let ro = null;
 
   /* ── Scroll-driven Bi-directional Fade ──── */
-  const fadeSections = document.querySelectorAll('.fade-section');
+  let fadeSections = [];
+  let ticking = false;
 
   function updateFade() {
     const vh = window.innerHeight;
-    const sweetTop = vh * 0.15;   // fade-in completes here (from top)
-    const sweetBot = vh * 0.85;   // fade-out begins here (toward bottom)
+    const sweetTop = vh * 0.15;
+    const sweetBot = vh * 0.85;
 
     fadeSections.forEach(el => {
       const rect = el.getBoundingClientRect();
@@ -147,13 +139,10 @@
 
       let opacity;
       if (center < sweetTop) {
-        // above sweet zone — fading out
         opacity = Math.max(0, center / sweetTop);
       } else if (center > sweetBot) {
-        // below sweet zone — fading in
         opacity = Math.max(0, (vh - center) / (vh - sweetBot));
       } else {
-        // inside sweet zone — fully visible
         opacity = 1;
       }
 
@@ -163,16 +152,62 @@
     });
   }
 
-  let ticking = false;
   function onScroll() {
     if (!ticking) {
       requestAnimationFrame(() => { updateFade(); ticking = false; });
       ticking = true;
     }
   }
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll);
-  // initial pass
-  updateFade();
+
+  /* ── Start / Stop ──────────────────────── */
+  function startStarfield() {
+    if (isRunning) return;
+    isRunning = true;
+    resize();
+    seedStars();
+    animationId = requestAnimationFrame(drawStars);
+    shooterInterval = setInterval(spawnShooter, SHOOTING_INTERVAL);
+
+    ro = new ResizeObserver(() => {
+      const newH = Math.max(document.documentElement.scrollHeight, window.innerHeight);
+      if (Math.abs(canvas.height - newH) > 50) {
+        canvas.height = newH;
+        seedStars();
+      }
+    });
+    ro.observe(document.documentElement);
+
+    // Reinitialize scroll fade for home section
+    fadeSections = document.querySelectorAll('.page-content.active .fade-section');
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    updateFade();
+  }
+
+  function stopStarfield() {
+    if (!isRunning) return;
+    isRunning = false;
+    if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+    if (shooterInterval) { clearInterval(shooterInterval); shooterInterval = null; }
+    if (ro) { ro.disconnect(); ro = null; }
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onScroll);
+    shooters.length = 0;
+  }
+
+  /* ── Listen for SPA page changes ──────── */
+  window.addEventListener('spa:pageChanged', (e) => {
+    if (e.detail.page === 'home') {
+      startStarfield();
+    } else {
+      stopStarfield();
+    }
+  });
+
+  // Start immediately if we're on the home page
+  const initialSection = document.querySelector('.page-content.active');
+  if (initialSection && initialSection.dataset.page === 'home') {
+    startStarfield();
+  }
 
 })();

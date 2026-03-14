@@ -11,29 +11,28 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body class="landing-body">
-  <script>if(sessionStorage.getItem('ptArrival'))document.body.classList.add('pt-arrive');</script>
   <canvas id="starfield"></canvas>
 
   <header id="app-header">
     <h1><span class="title-rune">⟡</span> Classroom XP Tracker <span class="title-rune">⟡</span></h1>
     <span id="sync-status" class="sync-status"></span>
     <nav id="main-nav">
-      <a href="index.html" class="nav-btn active"><span class="nav-sigil">✦</span><span class="nav-label">Home</span></a>
-      <a href="tracker.html" class="nav-btn"><span class="nav-sigil">📊</span><span class="nav-label">Tracker</span></a>
-      <a href="daily.html" class="nav-btn"><span class="nav-sigil">✅</span><span class="nav-label">Daily</span></a>
-      <a href="behavior.html" class="nav-btn"><span class="nav-sigil">⚖️</span><span class="nav-label">Behavior</span></a>
-      <a href="leaderboard.html" class="nav-btn"><span class="nav-sigil">🏆</span><span class="nav-label">Board</span></a>
-      <a href="currency.html" class="nav-btn"><span class="nav-sigil">🪙</span><span class="nav-label">Currency</span></a>
-      <a href="log.html" class="nav-btn"><span class="nav-sigil">📜</span><span class="nav-label">Log</span></a>
-      <a href="settings.html" class="nav-btn"><span class="nav-sigil">⚙️</span><span class="nav-label">Settings</span></a>
+      <a href="#home" class="nav-btn active" data-page="home"><span class="nav-sigil">✦</span><span class="nav-label">Home</span></a>
+      <a href="#tracker" class="nav-btn" data-page="tracker"><span class="nav-sigil">📊</span><span class="nav-label">Tracker</span></a>
+      <a href="#daily" class="nav-btn" data-page="daily"><span class="nav-sigil">✅</span><span class="nav-label">Daily</span></a>
+      <a href="#behavior" class="nav-btn" data-page="behavior"><span class="nav-sigil">⚖️</span><span class="nav-label">Behavior</span></a>
+      <a href="#leaderboard" class="nav-btn" data-page="leaderboard"><span class="nav-sigil">🏆</span><span class="nav-label">Board</span></a>
+      <a href="#currency" class="nav-btn" data-page="currency"><span class="nav-sigil">🪙</span><span class="nav-label">Currency</span></a>
+      <a href="#log" class="nav-btn" data-page="log"><span class="nav-sigil">📜</span><span class="nav-label">Log</span></a>
+      <a href="#settings" class="nav-btn" data-page="settings"><span class="nav-sigil">⚙️</span><span class="nav-label">Settings</span></a>
     </nav>
   </header>
 
   <main id="app-main" class="landing-main">
-    <section class="page-content" data-page="home">
-      <div class="flow">
 
-        <!-- ═══ HERO ═══ -->
+    <!-- ═══════════ HOME (Landing) ═══════════ -->
+    <section class="page-content active" data-page="home">
+      <div class="flow">
         <div class="hero fade-section">
           <svg viewBox="0 0 100 100" class="hero-shield">
             <polygon points="50,5 95,30 95,75 50,95 5,75 5,30" fill="none" stroke="url(#shieldGrad)" stroke-width="2"/>
@@ -48,171 +47,233 @@
             <span class="hero-line accent">Into an Adventure</span>
           </h2>
           <p class="hero-sub">An RPG-inspired system that transforms daily effort into XP, levels, titles, and rewards — built for real classrooms, powered by a little bit of magic.</p>
-          <a href="tracker.html" class="btn-quest"><span class="btn-icon">⚡</span> Begin Your Quest</a>
+          <a href="#tracker" class="btn-quest" data-page="tracker"><span class="btn-icon">⚡</span> Begin Your Quest</a>
         </div>
-
-        <!-- stats as an inline sentence -->
         <p class="stats-sentence fade-section">
           <span class="glow-word">10 Levels</span> to conquer · 
           <span class="glow-word">17 Titles</span> to unlock · 
           <span class="glow-word">∞ Coins</span> to earn · 
           <span class="glow-word">~5 min</span> daily
         </p>
-
         <div class="divider fade-section">✦ ✦ ✦</div>
-
-        <!-- ═══ THE DAILY RITUAL ═══ -->
         <h2 class="section-heading fade-section"><span class="heading-marker">Chapter I</span>The Daily Ritual</h2>
         <p class="section-sub fade-section">A simple loop — less than five minutes.</p>
-
-        <div class="step fade-section">
-          <span class="step-num" style="color:#7c4dff">1</span>
-          <div><strong>Teach as Normal</strong> — No extra prep. Just run your class.</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#2979ff">2</span>
-          <div><strong>Tick the Checklist</strong> — Open <a href="daily.html">Daily Checklist</a>. Mark quiz, participation, kindness.</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#ff5252">3</span>
-          <div><strong>Log Any Behavior</strong> — Issues? Record on <a href="behavior.html">Behavior</a>. None? Skip it.</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#00c853">4</span>
-          <div><strong>Process XP ✨</strong> — Hit <em>Process Daily XP</em> on the <a href="tracker.html">Tracker</a>. Done.</div>
-        </div>
-
+        <div class="step fade-section"><span class="step-num" style="color:#7c4dff">1</span><div><strong>Teach as Normal</strong> — No extra prep. Just run your class.</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#2979ff">2</span><div><strong>Tick the Checklist</strong> — Open <a href="#daily" data-page="daily">Daily Checklist</a>. Mark quiz, participation, kindness.</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#ff5252">3</span><div><strong>Log Any Behavior</strong> — Issues? Record on <a href="#behavior" data-page="behavior">Behavior</a>. None? Skip it.</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#00c853">4</span><div><strong>Process XP ✨</strong> — Hit <em>Process Daily XP</em> on the <a href="#tracker" data-page="tracker">Tracker</a>. Done.</div></div>
         <div class="divider fade-section">✦ ✦ ✦</div>
-
-        <!-- ═══ YOUR TOOLKIT ═══ -->
         <h2 class="section-heading fade-section"><span class="heading-marker">Chapter II</span>Your Toolkit</h2>
         <p class="section-sub fade-section">Six enchanted instruments at your command.</p>
-
-        <a href="tracker.html" class="tool-row fade-section">
-          <span class="tool-icon">📊</span>
-          <span class="tool-name">XP Tracker</span>
-          <span class="tool-desc">Master roster — names, levels, XP, debt, guilds.</span>
-        </a>
-        <a href="daily.html" class="tool-row fade-section">
-          <span class="tool-icon">✅</span>
-          <span class="tool-name">Daily Checklist</span>
-          <span class="tool-desc">Quick check-boxes for quiz, kindness, participation.</span>
-        </a>
-        <a href="behavior.html" class="tool-row fade-section">
-          <span class="tool-icon">⚖️</span>
-          <span class="tool-name">Behavior Tracker</span>
-          <span class="tool-desc">Temporary XP debt. Consequences without permanent loss.</span>
-        </a>
-        <a href="leaderboard.html" class="tool-row fade-section">
-          <span class="tool-icon">🏆</span>
-          <span class="tool-name">Leaderboard</span>
-          <span class="tool-desc">Rankings, streak badges, guild totals. Project it!</span>
-        </a>
-        <a href="currency.html" class="tool-row fade-section">
-          <span class="tool-icon">🪙</span>
-          <span class="tool-name">Currency Shop</span>
-          <span class="tool-desc">~1 coin per 20 XP. Spend on rewards you define.</span>
-        </a>
-        <a href="log.html" class="tool-row fade-section">
-          <span class="tool-icon">📜</span>
-          <span class="tool-name">XP Log</span>
-          <span class="tool-desc">Automatic history. Fully hands-off.</span>
-        </a>
-
+        <a href="#tracker" class="tool-row fade-section" data-page="tracker"><span class="tool-icon">📊</span><span class="tool-name">XP Tracker</span><span class="tool-desc">Master roster — names, levels, XP, debt, guilds.</span></a>
+        <a href="#daily" class="tool-row fade-section" data-page="daily"><span class="tool-icon">✅</span><span class="tool-name">Daily Checklist</span><span class="tool-desc">Quick check-boxes for quiz, kindness, participation.</span></a>
+        <a href="#behavior" class="tool-row fade-section" data-page="behavior"><span class="tool-icon">⚖️</span><span class="tool-name">Behavior Tracker</span><span class="tool-desc">Temporary XP debt. Consequences without permanent loss.</span></a>
+        <a href="#leaderboard" class="tool-row fade-section" data-page="leaderboard"><span class="tool-icon">🏆</span><span class="tool-name">Leaderboard</span><span class="tool-desc">Rankings, streak badges, guild totals. Project it!</span></a>
+        <a href="#currency" class="tool-row fade-section" data-page="currency"><span class="tool-icon">🪙</span><span class="tool-name">Currency Shop</span><span class="tool-desc">~1 coin per 20 XP. Spend on rewards you define.</span></a>
+        <a href="#log" class="tool-row fade-section" data-page="log"><span class="tool-icon">📜</span><span class="tool-name">XP Log</span><span class="tool-desc">Automatic history. Fully hands-off.</span></a>
         <div class="divider fade-section">✦ ✦ ✦</div>
-
-        <!-- ═══ GAME MECHANICS ═══ -->
         <h2 class="section-heading fade-section"><span class="heading-marker">Chapter III</span>Game Mechanics</h2>
         <p class="section-sub fade-section">The arcane systems behind the scenes.</p>
-
-        <div class="mechanic fade-section">
-          <h3 class="mechanic-title">⚡ XP Sources</h3>
-          <p class="mechanic-tags">
-            Quiz +10 · Expectations +10 · Faculty +5 · Exit Ticket +5 · Writing +5 · Kindness +5
-          </p>
-          <p class="mechanic-body">Plus 5 participation mini-checks (+2 each), custom bonuses, and test-score mapping.</p>
-        </div>
-
-        <div class="mechanic fade-section">
-          <h3 class="mechanic-title">🛡️ Guilds</h3>
-          <p class="mechanic-body">
-            <span style="color:#1e88e5">⚔ Blue</span> · 
-            <span style="color:#fbc02d">⚔ Gold</span> · 
-            <span style="color:#8e24aa">⚔ Purple</span> — 
-            Teams for friendly competition or cooperative goals.
-          </p>
-        </div>
-
-        <div class="mechanic fade-section">
-          <h3 class="mechanic-title">🔥 Streaks</h3>
-          <p class="mechanic-body">
-            🔥 5 days · 💥 10 days · 💎 15 days · 🏆 20 days<br>
-            ≥3 participation checks per day keeps the streak alive.
-          </p>
-        </div>
-
-        <div class="mechanic fade-section">
-          <h3 class="mechanic-title">⚖️ The Debt System</h3>
-          <p class="mechanic-body">
-            <span style="color:#69f0ae">+XP Earned</span> → 
-            <span style="color:#ff8a80">Pays Debt</span> → 
-            <span style="color:#b388ff">Levels Up</span><br>
-            Debt is temporary. Future XP pays it off first, then advances.
-          </p>
-        </div>
-
+        <div class="mechanic fade-section"><h3 class="mechanic-title">⚡ XP Sources</h3><p class="mechanic-tags">Quiz +10 · Expectations +10 · Faculty +5 · Exit Ticket +5 · Writing +5 · Kindness +5</p><p class="mechanic-body">Plus 5 participation mini-checks (+2 each), custom bonuses, and test-score mapping.</p></div>
+        <div class="mechanic fade-section"><h3 class="mechanic-title">🛡️ Guilds</h3><p class="mechanic-body"><span style="color:#1e88e5">⚔ Blue</span> · <span style="color:#fbc02d">⚔ Gold</span> · <span style="color:#8e24aa">⚔ Purple</span> — Teams for friendly competition or cooperative goals.</p></div>
+        <div class="mechanic fade-section"><h3 class="mechanic-title">🔥 Streaks</h3><p class="mechanic-body">🔥 5 days · 💥 10 days · 💎 15 days · 🏆 20 days<br>≥3 participation checks per day keeps the streak alive.</p></div>
+        <div class="mechanic fade-section"><h3 class="mechanic-title">⚖️ The Debt System</h3><p class="mechanic-body"><span style="color:#69f0ae">+XP Earned</span> → <span style="color:#ff8a80">Pays Debt</span> → <span style="color:#b388ff">Levels Up</span><br>Debt is temporary. Future XP pays it off first, then advances.</p></div>
         <div class="divider fade-section">✦ ✦ ✦</div>
-
-        <!-- ═══ GETTING STARTED ═══ -->
         <h2 class="section-heading fade-section"><span class="heading-marker">Chapter IV</span>Begin Your Journey</h2>
         <p class="section-sub fade-section">Up and running in two minutes.</p>
-
-        <div class="step fade-section">
-          <span class="step-num" style="color:#7c4dff">👤</span>
-          <div><strong>Summon Your Adventurers</strong> — Enter student names on the <a href="tracker.html">XP Tracker</a>.</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#2979ff">🛡️</span>
-          <div><strong>Form the Guilds</strong> — Assign each student to a guild (optional but fun).</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#ff5252">✅</span>
-          <div><strong>Track Your First Day</strong> — Use the Daily Checklist. Process XP at end of class.</div>
-        </div>
-        <div class="step fade-section">
-          <span class="step-num" style="color:#00c853">🎉</span>
-          <div><strong>Celebrate!</strong> — Show the Leaderboard. Cheer level-ups. The adventure begins!</div>
-        </div>
-
+        <div class="step fade-section"><span class="step-num" style="color:#7c4dff">👤</span><div><strong>Summon Your Adventurers</strong> — Enter student names on the <a href="#tracker" data-page="tracker">XP Tracker</a>.</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#2979ff">🛡️</span><div><strong>Form the Guilds</strong> — Assign each student to a guild (optional but fun).</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#ff5252">✅</span><div><strong>Track Your First Day</strong> — Use the Daily Checklist. Process XP at end of class.</div></div>
+        <div class="step fade-section"><span class="step-num" style="color:#00c853">🎉</span><div><strong>Celebrate!</strong> — Show the Leaderboard. Cheer level-ups. The adventure begins!</div></div>
         <div class="divider fade-section">✦ ✦ ✦</div>
-
-        <!-- ═══ TIPS ═══ -->
         <h3 class="tips-heading fade-section">📜 Wisdom from the Elders</h3>
         <p class="tip fade-section">✦ Praise the <em>effort</em> behind level-ups, not just the level.</p>
         <p class="tip fade-section">✦ Let students suggest new reward ideas for the shop.</p>
         <p class="tip fade-section">✦ Adjust bonus values for special theme days or events.</p>
-        <p class="tip fade-section">✦ Use <a href="settings.html">Settings</a> to export backups regularly.</p>
+        <p class="tip fade-section">✦ Use <a href="#settings" data-page="settings">Settings</a> to export backups regularly.</p>
         <p class="tip fade-section">✦ Start simple — expand gradually.</p>
-
         <div class="divider fade-section">✦</div>
-
-        <!-- ═══ CTA ═══ -->
         <h2 class="cta-title fade-section">Your Adventure Awaits</h2>
         <p class="cta-sub fade-section">Mark a few items. Process XP. Show progress. Celebrate.</p>
-        <div class="cta-btn-wrap fade-section">
-          <a href="tracker.html" class="btn-quest btn-quest--lg"><span class="btn-icon">⚡</span> Launch XP Tracker</a>
-        </div>
-
+        <div class="cta-btn-wrap fade-section"><a href="#tracker" class="btn-quest btn-quest--lg" data-page="tracker"><span class="btn-icon">⚡</span> Launch XP Tracker</a></div>
         <p class="credit fade-section">Made for teachers — minimal clicks, maximum encouragement ✨</p>
-
       </div>
     </section>
+
+    <!-- ═══════════ TRACKER ═══════════ -->
+    <section id="tab-tracker" class="page-content" data-page="tracker">
+      <div class="tab-header">
+        <h2>📊 XP Tracker</h2>
+        <div class="tab-actions">
+          <button id="btn-add-student" class="btn btn-primary">+ Add Student</button>
+          <button id="btn-process-xp" class="btn btn-success">⚡ Process Daily XP</button>
+          <button id="btn-recompute" class="btn btn-secondary" title="Recalculates all levels, titles, and progress bars from stored XP totals.">🔄 Recompute Progress</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="tracker-table">
+          <thead><tr><th>Name</th><th>Title</th><th>Level</th><th>XP in Level</th><th>XP to Next</th><th>Progress</th><th>XP Debt</th><th>Guild</th><th>Actions</th></tr></thead>
+          <tbody id="tracker-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ DAILY ═══════════ -->
+    <section id="tab-daily" class="page-content" data-page="daily">
+      <div class="tab-header">
+        <h2>📝 Daily Checklist</h2>
+        <div class="tab-actions">
+          <button id="btn-check-all-daily" class="btn btn-secondary">✅ Check All</button>
+          <button id="btn-uncheck-all-daily" class="btn btn-secondary">⬜ Uncheck All</button>
+        </div>
+      </div>
+      <div class="bonus-row" id="bonus-config">
+        <label>Bonus A: <input type="number" id="bonusA" min="0" max="10" value="0" class="small-input" /></label>
+        <label>Bonus B: <input type="number" id="bonusB" min="0" max="10" value="0" class="small-input" /></label>
+        <label>Bonus C: <input type="number" id="bonusC" min="0" max="10" value="0" class="small-input" /></label>
+        <label>Bonus D: <input type="number" id="bonusD" min="0" max="10" value="0" class="small-input" /></label>
+      </div>
+      <div class="table-wrap">
+        <table id="daily-table">
+          <thead><tr><th>Name</th><th>Test</th><th>Quiz</th><th>Faculty</th><th>Exit Ticket</th><th>Writing</th><th>Kindness</th><th>Expectations</th><th>Part 1</th><th>Part 2</th><th>Part 3</th><th>Part 4</th><th>Part 5</th><th>Bonus A</th><th>Bonus B</th><th>Bonus C</th><th>Bonus D</th><th>Total</th><th>Comment</th></tr></thead>
+          <tbody id="daily-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ BEHAVIOR ═══════════ -->
+    <section id="tab-behavior" class="page-content" data-page="behavior">
+      <div class="tab-header">
+        <h2>⚖️ Behavior Tracker</h2>
+        <div class="tab-actions">
+          <button id="btn-uncheck-all-behavior" class="btn btn-secondary">⬜ Uncheck All</button>
+        </div>
+      </div>
+      <div class="bonus-row" id="behavior-extra-config">
+        <label>Extra A penalty: <input type="number" id="extraPenaltyA" min="0" max="30" value="0" class="small-input" /></label>
+        <label>Extra B penalty: <input type="number" id="extraPenaltyB" min="0" max="30" value="0" class="small-input" /></label>
+        <label>Extra C penalty: <input type="number" id="extraPenaltyC" min="0" max="30" value="0" class="small-input" /></label>
+      </div>
+      <div class="table-wrap">
+        <table id="behavior-table">
+          <thead><tr><th>Name</th><th>Minor</th><th>Warning</th><th>Disrupt</th><th>Repeat</th><th>Serious</th><th>Severe</th><th>Extra A</th><th>Extra B</th><th>Extra C</th><th>Debt Δ</th><th>Comment</th></tr></thead>
+          <tbody id="behavior-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ LEADERBOARD ═══════════ -->
+    <section id="tab-leaderboard" class="page-content" data-page="leaderboard">
+      <div class="tab-header"><h2>🏆 Leaderboard</h2></div>
+      <div id="guild-summary" class="guild-summary"></div>
+      <div id="leaderboard-container" class="leaderboard-container"></div>
+    </section>
+
+    <!-- ═══════════ CURRENCY ═══════════ -->
+    <section id="tab-currency" class="page-content" data-page="currency">
+      <div class="tab-header"><h2>🪙 Currency & Shop</h2></div>
+      <table id="currency-table">
+        <thead><tr><th>Name</th><th>Total Earned</th><th>Total Spent</th><th>Balance</th><th>Spend</th></tr></thead>
+        <tbody id="currency-body"></tbody>
+      </table>
+      <h3 style="margin-top:1.5rem">Recent Transactions</h3>
+      <div class="table-wrap">
+        <table id="spend-log-table">
+          <thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Note</th></tr></thead>
+          <tbody id="spend-log-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ LOG ═══════════ -->
+    <section id="tab-log" class="page-content" data-page="log">
+      <div class="tab-header">
+        <h2>📜 XP Log</h2>
+        <div class="tab-actions">
+          <button id="btn-export-log" class="btn btn-secondary">📤 Export CSV</button>
+          <button id="btn-clear-log" class="btn btn-danger">🗑️ Clear Log</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="log-table">
+          <thead><tr><th>Date</th><th>Student</th><th>Earned</th><th>Debt Paid</th><th>XP Applied</th><th>Overflow</th><th>Coins</th><th>Debt After</th><th>Cum XP</th><th>Level</th><th>Title</th></tr></thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ SETTINGS ═══════════ -->
+    <section id="tab-settings" class="page-content" data-page="settings">
+      <div class="tab-header"><h2>⚙️ Settings & Data</h2></div>
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>📐 XP Configuration</h3>
+          <div class="setting-row"><label>Daily XP Cap:</label><input type="number" id="cfg-xp-cap" min="1" value="50" /></div>
+          <div class="setting-row"><label>Coins per XP (rate):</label><input type="number" id="cfg-exchange-rate" min="1" value="20" /></div>
+          <h4>Daily Checklist Weights</h4>
+          <div class="setting-row"><label>Quiz:</label><input type="number" id="cfg-quiz" value="10" /></div>
+          <div class="setting-row"><label>Faculty:</label><input type="number" id="cfg-faculty" value="5" /></div>
+          <div class="setting-row"><label>Exit Ticket:</label><input type="number" id="cfg-exit" value="5" /></div>
+          <div class="setting-row"><label>Writing:</label><input type="number" id="cfg-writing" value="5" /></div>
+          <div class="setting-row"><label>Kindness:</label><input type="number" id="cfg-kindness" value="5" /></div>
+          <div class="setting-row"><label>Expectations:</label><input type="number" id="cfg-expectations" value="10" /></div>
+          <div class="setting-row"><label>Participation (each):</label><input type="number" id="cfg-part-each" value="2" /></div>
+          <h4>Test Score → XP</h4>
+          <div class="setting-row"><label>Score 1:</label><input type="number" id="cfg-test1" value="10" /></div>
+          <div class="setting-row"><label>Score 2:</label><input type="number" id="cfg-test2" value="15" /></div>
+          <div class="setting-row"><label>Score 3:</label><input type="number" id="cfg-test3" value="20" /></div>
+          <div class="setting-row"><label>Score 4:</label><input type="number" id="cfg-test4" value="25" /></div>
+          <h4>Behavior Penalties</h4>
+          <div class="setting-row"><label>Minor:</label><input type="number" id="cfg-minor" value="-5" /></div>
+          <div class="setting-row"><label>Warning:</label><input type="number" id="cfg-warning" value="-10" /></div>
+          <div class="setting-row"><label>Disrupt:</label><input type="number" id="cfg-disrupt" value="-15" /></div>
+          <div class="setting-row"><label>Repeat:</label><input type="number" id="cfg-repeat" value="-20" /></div>
+          <div class="setting-row"><label>Serious:</label><input type="number" id="cfg-serious" value="-25" /></div>
+          <div class="setting-row"><label>Severe:</label><input type="number" id="cfg-severe" value="-30" /></div>
+          <button id="btn-save-config" class="btn btn-primary" style="margin-top:1rem">💾 Save Config</button>
+        </div>
+        <div class="settings-card">
+          <h3>📥 Import from Google Sheets</h3>
+          <p class="help-text">Export your Google Sheet tabs as CSV files, then import them here to migrate your existing data.</p>
+          <div class="import-section">
+            <label><strong>XP Tracker (CSV):</strong></label>
+            <p class="help-text">Expects columns: Name, Title, CumXP, Level, XP in Level, XP to Next, Progress %, XP Debt, Guild</p>
+            <input type="file" id="import-tracker" accept=".csv,.tsv" />
+            <button id="btn-import-tracker" class="btn btn-primary">Import Students</button>
+          </div>
+          <div class="import-section">
+            <label><strong>XP Log (CSV):</strong></label>
+            <p class="help-text">Expects columns matching the XP Log sheet headers</p>
+            <input type="file" id="import-log" accept=".csv,.tsv" />
+            <button id="btn-import-log" class="btn btn-primary">Import XP Log</button>
+          </div>
+          <h3 style="margin-top:1.5rem">📤 Full Backup</h3>
+          <button id="btn-export-all" class="btn btn-secondary">Export All Data (JSON)</button>
+          <button id="btn-import-json" class="btn btn-secondary">Import All Data (JSON)</button>
+          <input type="file" id="import-json-file" accept=".json" style="display:none" />
+          <h3 style="margin-top:1.5rem">🗑️ Danger Zone</h3>
+          <button id="btn-reset-all" class="btn btn-danger">Reset All Data</button>
+        </div>
+      </div>
+    </section>
+
   </main>
+
+  <!-- Modal overlay -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
 
   <div id="toast-container"></div>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="js/page-turn.js" defer></script>
   <script type="module" src="js/app.js"></script>
   <script src="js/landing.js" defer></script>
 </body>

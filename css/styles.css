@@ -47,16 +47,6 @@ body {
   min-height: 100vh;
 }
 
-/* Arrival after page-turn: body starts hidden (set by head script),
-   then this class triggers a smooth fade-in */
-body.pt-arrive {
-  opacity: 0 !important;
-}
-body.pt-fade-in {
-  opacity: 1 !important;
-  transition: opacity 0.35s ease-out !important;
-}
-
 /* ── Header ── */
 #app-header {
   background: linear-gradient(135deg, #3D2B1F 0%, #5D4037 100%);
@@ -118,9 +108,10 @@ body.pt-fade-in {
 /* ── Main content ── */
 #app-main { padding: 1.25rem; max-width: 1400px; margin: 0 auto; }
 
-.tab-content { display: none; animation: fadeIn 0.25s ease; }
-.tab-content.active { display: block; }
-.page-content { display: block; animation: fadeIn 0.25s ease; }
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: fadeIn 0.25s ease; }
+.page-content { display: none; }
+.page-content.active { display: block; animation: fadeIn 0.25s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 .tab-header {
@@ -550,44 +541,5 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
   font-size: 0.85rem;
 }
 
-/* ── Page-Turn Transition ── */
 
-/* Destination page layer — visible underneath during the turn */
-#pt-dest {
-  position: fixed;
-  inset: 0;
-  z-index: 99990;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* Current page clone — clipped as it "turns" away */
-#pt-clone {
-  position: fixed;
-  inset: 0;
-  z-index: 99995;
-  overflow: hidden;
-  pointer-events: none;
-  will-change: clip-path;
-}
-
-/* Fold shadow along the turning edge */
-#pt-shadow {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 99996;
-  pointer-events: none;
-  will-change: left, opacity, transform;
-}
-
-/* Back-of-page highlight — simulates the turned page's underside */
-#pt-backface {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 99994;
-  pointer-events: none;
-  will-change: left, width, opacity;
-}
 

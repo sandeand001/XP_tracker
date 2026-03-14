@@ -1,212 +1,254 @@
 /* ═══════════════════════════════════════════════════════════
-   Page-Turn Transition — Custom canvas page curl
+   Page-Turn Transition — Complete SPA Navigation Controller
    ═══════════════════════════════════════════════════════════
-   On nav click:
-   1. Capture the current page as an image (html2canvas-lite
-      via an offscreen clone rendered to a canvas).
-   2. Fetch the destination page, render its content into
-      a background layer.
-   3. Animate the current-page image peeling/curling away
-      with a realistic fold, revealing the destination below.
-   4. After animation → navigate to the real URL.
+   This script OWNS all [data-page] navigation.  Flow:
 
-   The curl is rendered on a <canvas> using a clipping region
-   that simulates a page being turned from the right edge.
+   1. User clicks a [data-page] link/button.
+   2. We snapshot the current viewport into a fixed clone.
+   3. Under the clone (invisible to the user) we:
+      a. Clear the OLD page's dynamic content so it looks unloaded.
+      b. Swap the active section to the NEW page.
+      c. Render the NEW page's content via app.js navigateTo.
+   4. Animate the clone peeling away (directionally), revealing
+      the fully-rendered new page underneath.
+   5. Remove the clone.  Done — no flash, no re-trigger.
+
+   The clone sits at z-index 99995 over EVERYTHING, so
+   whatever happens underneath during swap is invisible.
    ═══════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
 
+  /* ── Page ordering for direction ── */
+  var NAV_ORDER = ['home','tracker','daily','behavior','leaderboard','currency','log','settings'];
+
+  function pageIndex(p) {
+    var i = NAV_ORDER.indexOf(p);
+    return i < 0 ? 0 : i;
+  }
+
+  var busy = false;
+
+  /* ── Boot ── */
   function init() {
-    /* ARRIVAL: if we came from a page turn, fade the body in smoothly.
-       The <head> script already set body to opacity:0 before first paint. */
-    if (sessionStorage.getItem('ptArrival')) {
-      sessionStorage.removeItem('ptArrival');
-      // Wait for the page to be fully rendered before fading in
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          document.body.classList.add('pt-fade-in');
-        });
-      });
-    }
-
-    let navigating = false;
-
-    document.addEventListener('click', (e) => {
-      if (navigating) return;
-      const link = e.target.closest('a.nav-btn, a.btn-quest, a.tool-row');
+    /* Intercept ALL clicks on [data-page] elements */
+    document.addEventListener('click', function (e) {
+      var link = e.target.closest('[data-page]');
       if (!link) return;
-      const href = link.getAttribute('href');
-      if (!href || href.startsWith('#') || href.startsWith('javascript')) return;
-      if (link.classList.contains('active')) { e.preventDefault(); return; }
 
+      /* ALWAYS eat the event so the browser never follows href="#…" */
       e.preventDefault();
-      navigating = true;
-      runPageTurn(href).catch(() => {
-        window.location.href = href;
+      e.stopPropagation();
+
+      if (busy) return;
+
+      var targetPage = link.dataset.page;
+      if (!targetPage) return;
+
+      var cur = document.querySelector('.page-content.active');
+      var curPage = cur ? cur.dataset.page : 'home';
+      if (curPage === targetPage) return;
+
+      busy = true;
+      var dir = pageIndex(targetPage) > pageIndex(curPage) ? 'left' : 'right';
+
+      doPageTurn(curPage, targetPage, dir).finally(function () {
+        busy = false;
       });
-    });
+    }, true);   /* ← useCapture so we fire BEFORE any other listeners */
   }
 
   /* ── Easing ── */
-  function easeInOutCubic(t) {
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function ease(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
   }
 
-  /* ────────────────────────────────────────────────────
-     Core: snapshot current page, fetch dest, animate
-     ──────────────────────────────────────────────────── */
-  async function runPageTurn(href) {
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const scrollY = window.scrollY;
-
-    /* 1. Fetch destination HTML */
-    let destHTML;
-    try {
-      const resp = await fetch(href, { cache: 'default' });
-      destHTML = await resp.text();
-    } catch (_) {
-      window.location.href = href;
-      return;
+  /* ── Clear dynamic content on the OLD page so it looks unloaded ── */
+  function clearPageContent(page) {
+    switch (page) {
+      case 'tracker':
+        var tb = document.getElementById('tracker-body');
+        if (tb) tb.innerHTML = '';
+        break;
+      case 'daily':
+        var db = document.getElementById('daily-body');
+        if (db) db.innerHTML = '';
+        break;
+      case 'behavior':
+        var bb = document.getElementById('behavior-body');
+        if (bb) bb.innerHTML = '';
+        break;
+      case 'leaderboard':
+        var lc = document.getElementById('leaderboard-container');
+        var gs = document.getElementById('guild-summary');
+        if (lc) lc.innerHTML = '';
+        if (gs) gs.innerHTML = '';
+        break;
+      case 'currency':
+        var cb = document.getElementById('currency-body');
+        var sl = document.getElementById('spend-log-body');
+        if (cb) cb.innerHTML = '';
+        if (sl) sl.innerHTML = '';
+        break;
+      case 'log':
+        var lb = document.getElementById('log-body');
+        if (lb) lb.innerHTML = '';
+        break;
+      /* home & settings are static — nothing to clear */
     }
-    const parser = new DOMParser();
-    const destDoc = parser.parseFromString(destHTML, 'text/html');
+  }
 
-    /* 2. Build DESTINATION layer (sits behind everything) */
-    const destLayer = document.createElement('div');
-    destLayer.id = 'pt-dest';
-    destLayer.style.cssText = `
-      position:fixed; inset:0; z-index:99990;
-      overflow:hidden; pointer-events:none;
-    `;
-    const destIsLanding = destDoc.body.classList.contains('landing-body');
-    destLayer.style.background = destIsLanding
-      ? '#0b0818'
-      : 'linear-gradient(135deg, #f5f0e1 0%, #e8e0cc 50%, #f0ead6 100%)';
+  /* ── Swap active section + update nav + theme ── */
+  function swapToPage(page) {
+    if (typeof window.__spaNavigateTo === 'function') {
+      window.__spaNavigateTo(page);
+    } else {
+      /* Fallback — minimal swap */
+      document.querySelectorAll('.page-content[data-page]').forEach(function (s) {
+        s.classList.toggle('active', s.dataset.page === page);
+      });
+      document.querySelectorAll('#main-nav .nav-btn[data-page]').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.page === page);
+      });
+      var isHome = (page === 'home');
+      document.body.classList.toggle('landing-body', isHome);
+      var m = document.getElementById('app-main');
+      if (m) m.classList.toggle('landing-main', isHome);
+      var sf = document.getElementById('starfield');
+      if (sf) sf.style.display = isHome ? '' : 'none';
+      history.replaceState(null, '', '#' + page);
+    }
+    window.scrollTo(0, 0);
+  }
 
-    Array.from(destDoc.body.children).forEach(el => {
-      const tag = el.tagName.toLowerCase();
-      if (tag === 'script' || tag === 'canvas') return;
-      const clone = el.cloneNode(true);
-      if (clone.querySelectorAll) {
-        clone.querySelectorAll('.fade-section').forEach(fs => {
-          fs.style.opacity = '1';
-          fs.style.transform = 'none';
-        });
-      }
-      destLayer.appendChild(clone);
-    });
-    document.body.appendChild(destLayer);
+  /* ═══════════════════════════════════════
+     Main page-turn sequence
+     ═══════════════════════════════════════ */
+  function doPageTurn(fromPage, toPage, direction) {
+    var W = window.innerWidth;
+    var scrollY = window.scrollY;
+    var DURATION = 650;
 
-    /* 3. Build CURRENT PAGE clone (sits on top, will be clipped) */
-    const cloneLayer = document.createElement('div');
-    cloneLayer.id = 'pt-clone';
-    cloneLayer.style.cssText = `
-      position:fixed; inset:0; z-index:99995;
-      overflow:hidden; pointer-events:none;
-    `;
-    const bodyBg = getComputedStyle(document.body).background ||
-                   getComputedStyle(document.body).backgroundColor || '#fbf7e9';
-    cloneLayer.style.background = bodyBg;
+    var fromBg = (fromPage === 'home') ? '#0b0818' : '#ede8d0';
+    var toBg   = (toPage   === 'home') ? '#0b0818' : '#ede8d0';
 
-    Array.from(document.body.children).forEach(el => {
-      const tag = el.tagName.toLowerCase();
-      if (tag === 'script' || tag === 'iframe' || tag === 'canvas') return;
-      if (el.id === 'pt-dest' || el.id === 'pt-clone' || el.id === 'pt-shadow') return;
-      cloneLayer.appendChild(el.cloneNode(true));
-    });
-    // Offset for current scroll position
-    const inner = document.createElement('div');
-    inner.style.cssText = `position:relative; top:${-scrollY}px;`;
-    while (cloneLayer.firstChild) inner.appendChild(cloneLayer.firstChild);
-    cloneLayer.appendChild(inner);
+    /* 1. Lock <html> background to current theme */
+    document.documentElement.style.background = fromBg;
 
-    document.body.appendChild(cloneLayer);
+    /* 2. Snapshot the viewport ─────────────────────────── */
+    var clone = document.createElement('div');
+    clone.style.cssText =
+      'position:fixed;inset:0;z-index:99995;overflow:hidden;' +
+      'pointer-events:none;background:' + fromBg + ';will-change:clip-path;';
 
-    /* 4. Build fold-shadow element */
-    const shadow = document.createElement('div');
-    shadow.id = 'pt-shadow';
-    shadow.style.cssText = `
-      position:fixed; top:0; bottom:0; width:60px;
-      z-index:99996; pointer-events:none; opacity:0;
-      background: linear-gradient(to left,
-        rgba(0,0,0,0)    0%,
-        rgba(0,0,0,0.12) 30%,
-        rgba(0,0,0,0.25) 50%,
-        rgba(0,0,0,0.12) 70%,
-        rgba(0,0,0,0)   100%
-      );
-    `;
+    var kids = document.body.children;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      var tag = el.tagName.toLowerCase();
+      if (tag === 'script' || tag === 'canvas') continue;
+      if (el.id === 'modal-overlay' || el.id === 'toast-container') continue;
+      clone.appendChild(el.cloneNode(true));
+    }
+
+    /* Match scroll offset */
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;top:' + (-scrollY) + 'px;';
+    while (clone.firstChild) wrap.appendChild(clone.firstChild);
+    clone.appendChild(wrap);
+
+    document.body.appendChild(clone);
+    /* Clone now covers the ENTIRE screen — user sees the old page frozen. */
+
+    /* 2b. Force the REAL header below the clone's z-index so its
+           sticky positioning can't bleed through during the swap.
+           Also hide starfield canvas so it doesn't flash. */
+    var appHeader = document.getElementById('app-header');
+    var starfield = document.getElementById('starfield');
+    var savedHeaderZ = appHeader ? appHeader.style.zIndex : '';
+    if (appHeader) appHeader.style.zIndex = '-1';
+    if (starfield) starfield.style.visibility = 'hidden';
+
+    /* 3. Under the clone: clear old, swap to new, render ─ */
+    clearPageContent(fromPage);
+    swapToPage(toPage);
+    document.documentElement.style.background = toBg;
+    window.scrollTo(0, 0);
+
+    /* 3b. Now that the swap is done, restore header z-index so it
+           appears correctly as the clone peels away */
+    if (appHeader) appHeader.style.zIndex = savedHeaderZ || '';
+
+    /* 4. Shadow & backface effects ─────────────────────── */
+    var shadowDir = (direction === 'left') ? 'to left' : 'to right';
+    var shadow = document.createElement('div');
+    shadow.style.cssText =
+      'position:fixed;top:0;bottom:0;width:60px;z-index:99996;' +
+      'pointer-events:none;opacity:0;' +
+      'background:linear-gradient(' + shadowDir +
+        ',rgba(0,0,0,0) 0%,rgba(0,0,0,0.15) 40%,' +
+        'rgba(0,0,0,0.25) 50%,rgba(0,0,0,0.15) 60%,rgba(0,0,0,0) 100%);';
     document.body.appendChild(shadow);
 
-    /* 5. Build back-of-page highlight (the curling page's underside) */
-    const backface = document.createElement('div');
-    backface.id = 'pt-backface';
-    backface.style.cssText = `
-      position:fixed; top:0; bottom:0; width:0;
-      z-index:99994; pointer-events:none;
-      background: linear-gradient(to right,
-        rgba(245,240,225,0.6) 0%,
-        rgba(237,232,209,0.9) 40%,
-        rgba(230,225,200,0.7) 100%
-      );
-      right:0;
-    `;
+    var bfDir = (direction === 'left') ? 'to right' : 'to left';
+    var backface = document.createElement('div');
+    backface.style.cssText =
+      'position:fixed;top:0;bottom:0;width:0;z-index:99994;' +
+      'pointer-events:none;' +
+      'background:linear-gradient(' + bfDir +
+        ',rgba(245,240,225,0.5) 0%,rgba(237,232,209,0.85) 40%,' +
+        'rgba(230,225,200,0.6) 100%);';
     document.body.appendChild(backface);
 
-    /* 6. Animate the page turning from right to left */
-    const DURATION = 800; // ms
-    const t0 = performance.now();
+    /* 5. Animate the clone peeling away ────────────────── */
+    var t0 = performance.now();
 
-    return new Promise((resolve) => {
+    return new Promise(function (resolve) {
       function frame(now) {
-        const elapsed = now - t0;
-        const rawT = Math.min(elapsed / DURATION, 1);
-        const t = easeInOutCubic(rawT);
+        var raw = Math.min((now - t0) / DURATION, 1);
+        var t = ease(raw);
+        var sinT = Math.sin(t * Math.PI);
+        var skew = sinT * 3;
 
-        /* The fold line moves from right edge (W) to left (0) */
-        const foldX = W * (1 - t);
+        if (direction === 'left') {
+          var fx = W * (1 - t);
+          clone.style.clipPath = 'polygon(0 0,' + fx + 'px 0,' + fx + 'px 100%,0 100%)';
+          shadow.style.left  = (fx - 30) + 'px';
+          shadow.style.right = 'auto';
+          var bw = Math.min(t * W * 0.3, 160);
+          backface.style.left  = fx + 'px';
+          backface.style.right = 'auto';
+          backface.style.width = bw + 'px';
+          shadow.style.transform = 'skewY(' + skew + 'deg)';
+        } else {
+          var fx2 = W * t;
+          clone.style.clipPath = 'polygon(' + fx2 + 'px 0,100% 0,100% 100%,' + fx2 + 'px 100%)';
+          shadow.style.left  = (fx2 - 30) + 'px';
+          shadow.style.right = 'auto';
+          var bw2 = Math.min(t * W * 0.3, 160);
+          backface.style.right = (W - fx2) + 'px';
+          backface.style.left  = 'auto';
+          backface.style.width = bw2 + 'px';
+          shadow.style.transform = 'skewY(' + (-skew) + 'deg)';
+        }
+        shadow.style.opacity   = String(sinT * 0.9);
+        backface.style.opacity = String(sinT * 0.7);
 
-        /* Clip the current-page clone: only show left of the fold */
-        cloneLayer.style.clipPath = `polygon(0 0, ${foldX}px 0, ${foldX}px 100%, 0 100%)`;
-
-        /* Position fold shadow at the fold line */
-        shadow.style.left = (foldX - 30) + 'px';
-        shadow.style.opacity = String(Math.sin(t * Math.PI) * 0.9);
-
-        /* Back-of-page: shows a sliver to the right of the fold
-           simulating the turned page's underside with a gradient */
-        const backW = Math.min(t * W * 0.35, 180);
-        backface.style.left = foldX + 'px';
-        backface.style.width = backW + 'px';
-        backface.style.opacity = String(Math.sin(t * Math.PI) * 0.7);
-
-        /* Add a subtle curl effect: skew the fold shadow */
-        const skewDeg = Math.sin(t * Math.PI) * 3;
-        shadow.style.transform = `skewY(${skewDeg}deg)`;
-
-        if (rawT < 1) {
+        if (raw < 1) {
           requestAnimationFrame(frame);
         } else {
-          /* Clean up and navigate */
-          cloneLayer.remove();
+          clone.remove();
           shadow.remove();
           backface.remove();
-          /* Small delay so user sees the destination fully revealed */
-          setTimeout(() => {
-            destLayer.remove();
-            sessionStorage.setItem('ptArrival', '1');
-            window.location.href = href;
-            resolve();
-          }, 120);
+          if (starfield) starfield.style.visibility = '';
+          document.documentElement.style.background = '';
+          resolve();
         }
       }
-
       requestAnimationFrame(frame);
     });
   }
 
-  /* ── Boot ── */
+  /* ── Start ── */
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
