@@ -611,10 +611,10 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 .lb-podium-3 .lb-podium-name { font-size: 1.5rem; text-shadow: 0 0 12px rgba(205,127,50,0.2); }
 .lb-podium-title {
   font-family: 'MedievalSharp', cursive;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   letter-spacing: 0.04em;
 }
-.lb-podium-1 .lb-podium-title { color: #ffeaa0; font-size: 1.15rem; }
+.lb-podium-1 .lb-podium-title { color: #ffeaa0; font-size: 1.3rem; }
 .lb-podium-2 .lb-podium-title { color: #d4d4d4; }
 .lb-podium-3 .lb-podium-title { color: #dda86a; }
 .lb-podium-stats {
@@ -643,7 +643,7 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 
 /* ═══ Title sigil (shared) ═══ */
 .lb-title-sigil {
-  font-size: 1.1em;
+  font-size: 1.45em;
   vertical-align: middle;
 }
 
@@ -652,7 +652,7 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
    ═══════════════════════════════════════════ */
 .lb-entry:not(.lb-podium) {
   display: grid;
-  grid-template-columns: 56px 1fr 1.2fr auto;
+  grid-template-columns: 56px 1fr auto 1.2fr auto;
   align-items: center;
   gap: 0.75rem;
   padding: 0.65rem 1.25rem;
@@ -684,9 +684,6 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 
 /* ── Identity (standard) ── */
 .lb-identity {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 .lb-name {
@@ -698,7 +695,7 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 }
 .lb-title {
   font-family: 'MedievalSharp', cursive;
-  font-size: 0.88rem;
+  font-size: 1.05rem;
   color: #b8a9d4;
   letter-spacing: 0.03em;
 }

@@ -415,7 +415,7 @@ export function renderLeaderboard() {
             <span class="lb-podium-rank">#${e.rank}</span>
             <span class="lb-podium-name" style="${nameStyle}">${guildDot}${esc(e.name)}${e.streak.badge ? `<span class="lb-streak-badge" title="${e.streak.count} day streak">${e.streak.badge}</span>` : ''}</span>
             <span class="lb-podium-sep">·</span>
-            <span class="lb-podium-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')} <span class="lb-title-sigil">${titleBadge}</span></span>
+            <span class="lb-podium-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')}</span>
           </div>
           <div class="lb-podium-line">
             <span class="lb-podium-level">Lv. ${e.level}</span>
@@ -439,8 +439,8 @@ export function renderLeaderboard() {
         </div>
         <div class="lb-identity">
           <div class="lb-name" style="${nameStyle}">${guildDot}${esc(e.name)}${e.streak.badge ? `<span class="lb-streak-badge" title="${e.streak.count} day streak">${e.streak.badge}</span>` : ''}</div>
-          <div class="lb-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')} <span class="lb-title-sigil">${titleBadge}</span></div>
         </div>
+        <div class="lb-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')}</div>
         <div class="lb-stats">
           <div class="lb-level">Lv. ${e.level}</div>
           <div class="lb-bar">
