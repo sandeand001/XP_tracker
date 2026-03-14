@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚖️ Behavior — Classroom XP Tracker</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header id="app-header">
+    <h1>🪄 Classroom XP Tracker 🪄</h1>
+    <span id="sync-status" class="sync-status"></span>
+    <nav id="main-nav">
+      <a href="index.html" class="nav-btn">Home</a>
+      <a href="tracker.html" class="nav-btn">XP Tracker</a>
+      <a href="daily.html" class="nav-btn">Daily Checklist</a>
+      <a href="behavior.html" class="nav-btn active">Behavior</a>
+      <a href="leaderboard.html" class="nav-btn">Leaderboard</a>
+      <a href="currency.html" class="nav-btn">Currency</a>
+      <a href="log.html" class="nav-btn">XP Log</a>
+      <a href="settings.html" class="nav-btn">Settings</a>
+    </nav>
+  </header>
+
+  <main id="app-main">
+    <section id="tab-behavior" class="page-content" data-page="behavior">
+      <div class="tab-header">
+        <h2>⚖️ Behavior Tracker</h2>
+        <div class="tab-actions">
+          <button id="btn-uncheck-all-behavior" class="btn btn-secondary">⬜ Uncheck All</button>
+        </div>
+      </div>
+      <div class="bonus-row" id="behavior-extra-config">
+        <label>Extra A penalty: <input type="number" id="extraPenaltyA" min="0" max="30" value="0" class="small-input" /></label>
+        <label>Extra B penalty: <input type="number" id="extraPenaltyB" min="0" max="30" value="0" class="small-input" /></label>
+        <label>Extra C penalty: <input type="number" id="extraPenaltyC" min="0" max="30" value="0" class="small-input" /></label>
+      </div>
+      <div class="table-wrap">
+        <table id="behavior-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Minor</th><th>Warning</th><th>Disrupt</th><th>Repeat</th>
+              <th>Serious</th><th>Severe</th><th>Extra A</th><th>Extra B</th><th>Extra C</th>
+              <th>Debt Δ</th><th>Comment</th>
+            </tr>
+          </thead>
+          <tbody id="behavior-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="js/page-turn.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

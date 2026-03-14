@@ -1,0 +1,2653 @@
+/**** CONFIG ******************************************************************/
+const TZ = "America/Los_Angeles";
+// Cached runtime config (memoized per invocation)
+var __CFG_CACHE = null;
+
+// Date at midnight (sheet TZ) for reliable equality with TODAY()
+function todayDateOnly_() {
+  try {
+    const now = new Date();
+    const tz = TZ || SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+    const y = Number(Utilities.formatDate(now, tz, 'yyyy'));
+    const m = Number(Utilities.formatDate(now, tz, 'MM'));
+    const d = Number(Utilities.formatDate(now, tz, 'dd'));
+    return new Date(y, m - 1, d, 0, 0, 0, 0);
+  } catch (e) {
+    // Fallback: strip time in local
+    const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  }
+}
+
+// Leaderboard fonts
+const FANTASY_FONT = "Cinzel Decorative";
+const NAME_FONT_FALLBACK = "Georgia";
+
+// Level thresholds (cumulative) for levels 1..10
+// First three preserved. Target: level 10 ~ day 160 for top performers (~25 XP/day -> 4000 XP) leaving final weeks for prestige.
+// Previous (replaced): [0,100,200,400,700,1150,1800,2650,3600,4500]
+// Updated:           [0,100,200,400,700,1150,1800,2550,3300,4000]
+// Approx day @25 XP/d: L4 16, L5 28, L6 46, L7 72, L8 102, L9 132, L10 160
+const levelThresholds = [0, 100, 200, 400, 700, 1150, 1800, 2550, 3300, 4000];
+
+// Prestige milestones (post-level-10 recognition). Ordered ascending by XP.
+// Designed for final ~20 school days + stretch goals. Adjust if empirical top XP shifts.
+// Approx remaining days after reaching 4000 at day ~160 (25 XP/day) => 20 days (~500 XP), so first prestige is intentionally attainable.
+const PRESTIGE_TITLES = [
+  { xp: 4200, title: "Sunmere Guardian" },        // reachable with modest continued effort
+  { xp: 4400, title: "Keeper of the Archives" },  // sustained daily engagement
+  { xp: 4650, title: "Chronomancer Adept" },      // requires some bonus/test boosts
+  { xp: 4950, title: "Eclipse Warden" },          // stretch beyond perfect average
+  { xp: 5300, title: "Arcane Vanguard" },         // rare elite
+  { xp: 5700, title: "Paragon of Realms" },       // exceptional (needs bonuses/tests)
+  { xp: 6150, title: "Ascendant Archmage" }       // aspirational cap
+];
+
+// Defaults for sheet-driven config (editable on "XP Config")
+const DEFAULT_XP_CAP = 50;          // Daily cap (after debt, before overflow)
+const DEFAULT_EXCHANGE_RATE = 20;   // 1 coin per N XP earned
+// Daily checklist weights → typical 30–50 attainable (Test now uses XP Config map)
+const DEFAULT_DAILY_WEIGHTS = {
+  quiz: 10,          // C
+  faculty: 5,        // D
+  exitTicket: 5,     // E
+  writing: 5,        // F
+  kindness: 5,       // G
+  expectations: 10,  // H
+  participationEach: 2 // I..M (5 parts → total 10)
+};
+// Behavior fixed penalty scale (negative values applied in sheet formula)
+const DEFAULT_BEHAVIOR_PENALTIES = {
+  minor: -5,   // B
+  warning: -10,// C
+  disrupt: -15,// D
+  repeat: -20, // E
+  serious: -25,// F
+  severe: -30  // G
+};
+
+// Guilds for XP Tracker (L)
+const GUILDS = [
+  { label: "Guild 1", bg: "#1e88e5", fg: "#ffffff" }, // blue
+  { label: "Guild 2", bg: "#fbc02d", fg: "#000000" }, // yellow
+  { label: "Guild 3", bg: "#8e24aa", fg: "#ffffff" }, // purple
+];
+
+// Default Test score→XP mapping (editable on the “XP Config” sheet)
+const TEST_SCORE_XP = { 1: 10, 2: 15, 3: 20, 4: 25 };
+
+/**** MENU ********************************************************************/
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('XP Tools')
+  .addItem('Process Daily XP', 'processDailyXP')
+  .addItem('Refresh Config', 'refreshConfig')
+    .addItem('Open Start Here', 'buildStartHerePage')
+  .addItem('Recompute Progress', 'recomputeAllLevelsAndProgress')
+  //.addItem('Toggle Compact Mode', 'toggleCompactMode')
+  //.addItem('Seed Random Names', 'seedRandomNames')
+  //.addItem('Randomize Daily Checkboxes', 'randomizeDailyCheckboxes')
+  .addItem('Reset All Data', 'showResetAllDataDialog')
+  .addSeparator()
+  //.addItem('Open Currency Summary', 'openCurrencySheet')
+  .addItem('Spend Coins (Shop)', 'showSpendCoinsDialog')
+  //.addItem('Recompute Coins (carryover)', 'recomputeCoinsCarryover')
+  //.addItem('Reset Currency (earned only)', 'resetCurrencyBalances')
+  //.addItem('Currency Audit (expected vs actual)', 'currencyAudit')
+    .addToUi();
+  // Ensure initialization runs once per document
+  try { maybeEnsureInit_(); } catch (e) {}
+}
+
+// Show a verbose confirmation dialog requiring explicit checkbox agreement
+function showResetAllDataDialog() {
+  const html = HtmlService.createHtmlOutput(`<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body { font-family: Arial, sans-serif; line-height: 1.4; padding: 16px; }
+      h2 { margin: 0 0 8px; color: #b71c1c; }
+      .box { background: #fff3e0; border: 1px solid #ffe0b2; padding: 12px; border-radius: 6px; }
+      ul { margin: 8px 0 12px 18px; }
+      .actions { margin-top: 12px; display: flex; gap: 8px; }
+      button { padding: 8px 12px; }
+      label { display: flex; align-items: flex-start; gap: 8px; }
+      .warn { color: #b71c1c; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h2>Reset All Data — Destructive Action</h2>
+    <div class="box">
+      <p class="warn">This will erase all current data and return your workbook to a fresh, ready-to-use state.</p>
+      <p>The following will be cleared or rebuilt:</p>
+      <ul>
+        <li>All Names, inputs, and totals on “XP Tracker”, “Daily Checklist”, and “Behavior Tracker”.</li>
+        <li>The entire “XP Log” sheet (deleted).</li>
+        <li>The entire “Comments (matrix)” sheet (deleted and recreated blank with headers).</li>
+        <li>Leaderboard contents and formatting (recreated).</li>
+        <li>Formulas, validations, protections, and styles will be reapplied.</li>
+      </ul>
+      <p>“XP Config” settings and score mappings are preserved.</p>
+      <label>
+        <input type="checkbox" id="ack" />
+        <span>I understand this action is permanent and will clear all current data, including Names and Comments. Rebuilding is automatic, but the cleared data cannot be recovered.</span>
+      </label>
+      <div class="actions">
+        <button id="confirm" disabled>Yes, reset everything</button>
+        <button id="cancel">Cancel</button>
+      </div>
+    </div>
+    <script>
+      const ack = document.getElementById('ack');
+      const btn = document.getElementById('confirm');
+      const cancel = document.getElementById('cancel');
+      ack.addEventListener('change', ()=>{ btn.disabled = !ack.checked; });
+      btn.addEventListener('click', ()=>{
+        btn.disabled = true;
+        google.script.run.withSuccessHandler(function(){ google.script.host.close(); }).proceedResetAllData();
+      });
+      cancel.addEventListener('click', ()=>{ google.script.host.close(); });
+    </script>
+  </body>
+  </html>`).setWidth(580).setHeight(460);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Confirm Reset All Data');
+}
+
+// Called from dialog after user confirms with checkbox
+function proceedResetAllData() {
+  resetAllData();
+  try { SpreadsheetApp.getActive().toast('All data reset complete.', 'Reset', 5); } catch (e) {}
+}
+
+// Revert any edits to Name column on input sheets so it can only change via XP Tracker
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    const sh = e.range.getSheet();
+    const name = sh.getName();
+    const col = e.range.getColumn();
+    const row = e.range.getRow();
+    // Protect name mirrors on input sheets
+    if (["Daily Checklist", "Behavior Tracker"].includes(name)) {
+      if (col === 1 && row >= 2) {
+        // Restore the expanding ARRAYFORMULA
+        sh.getRange(2, 1).setFormula(`=ARRAYFORMULA(IF(LEN('XP Tracker'!A2:A), 'XP Tracker'!A2:A, ))`);
+        try { sh.toast('Name can only be edited on the XP Tracker sheet.', 'Protected', 3); } catch (err) {}
+      }
+      return;
+    }
+    // Handle Currency spend input (E column)
+    if (name === 'Currency' && col === 5 && row >= 2) {
+      const student = (sh.getRange(row, 1).getValue() || '').toString().trim();
+      const val = Number(e.value || e.range.getValue() || 0);
+      if (!student) return;
+      if (!isFinite(val) || val <= 0) return; // ignore invalid/non-positive
+  const dateOnly = todayDateOnly_();
+  // Validate balance
+      const bal = getCoinBalance(student);
+      if (bal < val) {
+        try {
+          sh.toast(`Insufficient coins for ${student}. Balance ${bal}, tried to spend ${val}.`, 'Currency', 4);
+        } catch (e) {}
+        return;
+      }
+    appendSpendToXPLog_(dateOnly, student, Math.floor(val), 'Spend via Currency sheet');
+      // Clear the entry and refresh row formulas
+      try { sh.getRange(row, 5).clearContent(); } catch (e) {}
+      try { sh.toast(`Spent ${val} coin(s) for ${student}.`, 'Currency', 3); } catch (e) {}
+    }
+  } catch (err) {
+    // swallow
+  }
+}
+
+/**** LEVEL/XP/TITLE HELPERS **************************************************/
+function getLevelFromXP(xp) {
+  for (let i = levelThresholds.length - 1; i >= 0; i--) {
+    if (xp >= levelThresholds[i]) return i + 1;
+  }
+  return 1;
+}
+function getXPForLevel(level) {
+  if (level < 10) return levelThresholds[level] - levelThresholds[level - 1];
+  return 0;
+}
+function determineTitle(cumXP, level) {
+  // Prestige lookup: highest milestone not exceeding cumXP
+  for (let i = PRESTIGE_TITLES.length - 1; i >= 0; i--) {
+    if (cumXP >= PRESTIGE_TITLES[i].xp) return PRESTIGE_TITLES[i].title;
+  }
+  // Base titles tied to level (pre-prestige)
+  switch (level) {
+    case 1:  return "Sparkling Novice";
+    case 2:  return "Rune Reader";
+    case 3:  return "Potion Apprentice";
+    case 4:  return "Spell Slinger";
+    case 5:  return "Wand Wielder";
+    case 6:  return "Magic Adept";
+    case 7:  return "Enchanted Knight";
+    case 8:  return "Arcane Scholar";
+    case 9:  return "Mystic Champion";
+    case 10: return "Master Spellcaster";
+    default: return "Adventurer";
+  }
+}
+
+/**** PROCESS *****************************************************************/
+function processDailyXP() {
+  // One-time setup if needed; avoid re-applying headers/protections on every run
+  try { maybeEnsureInit_(); } catch (e) {}
+
+  // Ensure exchange rate is 20 XP/coin
+  try { enforceExchangeRate20_(); } catch (e) {}
+  const cfg = getRuntimeConfig_();
+  const lock = LockService.getDocumentLock();
+  try { lock.tryLock(30000); } catch (e) {}
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const daily = ss.getSheetByName("Daily Checklist");
+  const tracker = ss.getSheetByName("XP Tracker");
+  const behavior = ss.getSheetByName("Behavior Tracker");
+
+  const now = new Date();
+  const dateStr = Utilities.formatDate(now, TZ, "yyyy-MM-dd");
+  const dateOnly = todayDateOnly_();
+  // Precompute prior totals (before today) for carryover coin minting
+  const prior = getEarnedAndMintedBeforeDate_(dateStr);
+
+  // Dynamically size based on all relevant sheets (cap at 25 for layout)
+  const trackerLastRow = tracker ? tracker.getLastRow() : 1;
+  const dailyLastRow   = daily ? daily.getLastRow() : 1;
+  const behLastRow     = behavior ? behavior.getLastRow() : 1;
+  const N = Math.min(25, Math.max(0, Math.max(trackerLastRow, dailyLastRow, behLastRow) - 1));
+
+  // Prefetch ranges
+  const namesTracker = tracker.getRange(2, 1, N, 1).getValues().map(r => (r[0] || "").toString().trim());
+  const namesDaily   = daily   ? daily.getRange(2, 1, N, 1).getValues().map(r => (r[0] || "").toString().trim()) : Array(N).fill("");
+  const namesBeh     = behavior? behavior.getRange(2, 1, N, 1).getValues().map(r => (r[0] || "").toString().trim()) : Array(N).fill("");
+  // Read tracker data needed: C..I (cumXP .. XP Debt)
+  const trackerData = tracker.getRange(2, 3, N, 7).getValues(); // C..I
+  // Read guild assignments (J) so we can aggregate daily XP per guild
+  const guildVals = tracker.getRange(2, 10, N, 1).getValues().map(r => (r[0] || "").toString().trim()); // J
+  const dailyVals = daily ? daily.getRange(2, 2, N, 18).getValues() : [];
+  const behaviorVals = behavior ? behavior.getRange(2, 2, N, 11).getValues() : [];
+
+  const dailyBonusHeader = daily ? daily.getRange(1, 14, 1, 4).getValues()[0] : [0,0,0,0]; // N1:Q1
+  const behaviorExtraHeader = behavior ? behavior.getRange(1, 13, 1, 3).getValues()[0] : [0,0,0]; // M1:O1 (hidden)
+
+  // Prepare output arrays for B..I (we no longer write any currency columns on the tracker)
+  const outBJ = Array.from({ length: N }, () => new Array(8).fill(""));
+  // Prepare comment updates (only clear when logging)
+  const outDailyComments = Array.from({ length: N }, (_, i) => [dailyVals[i] ? (dailyVals[i][17] || "") : ""]);
+  const outBehaviorComments = Array.from({ length: N }, (_, i) => [behaviorVals[i] ? (behaviorVals[i][10] || "") : ""]);
+
+  let lastIdx = -1;
+  let leaderboardNeedsUpdate = false;
+  const xpLogRows = []; // batch rows for XP Log
+  const commentEntries = []; // batch entries for Comments (matrix)
+  // Accumulate today's earned XP by guild label (used to show guild totals on the leaderboard)
+  const guildDailyTotals = Object.create(null);
+
+  // tiny helper once, not per-row allocation
+  const t01 = (v) => v === true ? 1 : 0;
+
+  // Track rows (0-based index within processing window) where a student levels up this run
+  const levelUpRows = [];
+
+  for (let i = 0; i < N; i++) {
+  const name = namesTracker[i] || namesDaily[i] || namesBeh[i] || "";
+    if (!name) continue;
+    lastIdx = i;
+
+  const earnedXP = Number(dailyVals[i][16]) || 0;          // R
+    const dailyComment = (dailyVals[i][17] || "").toString().trim(); // S
+    const behaviorDebtDelta = Number(behaviorVals[i][9]) || 0; // K
+    const behaviorComment = (behaviorVals[i][10] || "").toString().trim(); // L
+
+  // trackerData columns: C(0)=cumXP, D(1)=level, E(2)=xpInLevel, F(3)=xpToNext, G(4)=sparkline, H(5)=progress, I(6)=debt
+  let cumXP = Number(trackerData[i][0]) || 0; // C
+  let storedDebt = Number(trackerData[i][6]) || 0; // I
+
+    // Apply debt payment from today's XP
+    let totalDebt = storedDebt + behaviorDebtDelta;
+    let xpRemaining = earnedXP;
+    let debtApplied = 0;
+    if (totalDebt < 0 && xpRemaining > 0) {
+      const pay = Math.min(xpRemaining, -totalDebt);
+      totalDebt += pay;
+      xpRemaining -= pay;
+      debtApplied = pay;
+    }
+  const xpTowardLevel = Math.min(xpRemaining, cfg.XP_CAP);
+  const xpOverflow = Math.max(0, xpRemaining - cfg.XP_CAP);
+  // Carryover rule based on applied XP (XPToLevel only, excludes overflow and debt):
+  // coins today = floor((prevApplied + xpTowardLevel)/rate) - prevMinted
+  const prev = prior[name] || { applied: 0, minted: 0 };
+  const currencyGain = Math.max(0, Math.floor(((Number(prev.applied) || 0) + (Number(xpTowardLevel) || 0)) / cfg.EXCHANGE_RATE) - (Number(prev.minted) || 0));
+  cumXP += xpTowardLevel;
+
+  const prevLevel = Number(trackerData[i][1]) || 1; // prior stored level (column D of trackerData)
+  const level = getLevelFromXP(cumXP);
+  if (level > prevLevel) levelUpRows.push(i); // record level-up (i is 0-based offset; row number = i+2)
+    const baseXP = levelThresholds[level - 1];
+    const currentLevelXP = cumXP - baseXP;
+    const xpToNext = getXPForLevel(level);
+    const xpToNextDisplay = xpToNext === 0 ? 0 : Math.max(0, xpToNext - currentLevelXP);
+    const percentProgress = xpToNext === 0 ? 1 : (currentLevelXP / xpToNext);
+    const title = determineTitle(cumXP, level);
+
+    const rowNum = i + 2;
+    outBJ[i][0] = title;                        // B
+    outBJ[i][1] = cumXP;                        // C
+    outBJ[i][2] = level;                        // D
+    outBJ[i][3] = currentLevelXP;               // E
+    outBJ[i][4] = xpToNextDisplay;              // F
+    outBJ[i][5] = `=SPARKLINE(H${rowNum}, {"charttype","bar";"max",1;"color1","green"})`; // G
+    outBJ[i][6] = percentProgress;              // H
+  outBJ[i][7] = totalDebt;                    // I
+
+    // Flags for logging (use pre-fetched arrays)
+    const testScore = Number(dailyVals[i][0]) || 0; // B
+    const fQuiz    = t01(dailyVals[i][1]);
+    const fFaculty = t01(dailyVals[i][2]);
+    const fExit    = t01(dailyVals[i][3]);
+    const fWriting = t01(dailyVals[i][4]);
+    const fKindness= t01(dailyVals[i][5]);
+    const fExpect  = t01(dailyVals[i][6]);
+    const part1 = t01(dailyVals[i][7]);
+    const part2 = t01(dailyVals[i][8]);
+    const part3 = t01(dailyVals[i][9]);
+    const part4 = t01(dailyVals[i][10]);
+    const part5 = t01(dailyVals[i][11]);
+    const participationCount = part1 + part2 + part3 + part4 + part5;
+    const bonusA = t01(dailyVals[i][12]) ? (Number(dailyBonusHeader[0]) || 0) : 0;
+    const bonusB = t01(dailyVals[i][13]) ? (Number(dailyBonusHeader[1]) || 0) : 0;
+    const bonusC = t01(dailyVals[i][14]) ? (Number(dailyBonusHeader[2]) || 0) : 0;
+    const bonusD = t01(dailyVals[i][15]) ? (Number(dailyBonusHeader[3]) || 0) : 0;
+
+    const fMinor = t01(behaviorVals[i][0]);
+    const fWarn  = t01(behaviorVals[i][1]);
+    const fDisr  = t01(behaviorVals[i][2]);
+    const fRept  = t01(behaviorVals[i][3]);
+    const fSeri  = t01(behaviorVals[i][4]);
+    const fSevr  = t01(behaviorVals[i][5]);
+    const extraA = t01(behaviorVals[i][6]) ? -(Number(behaviorExtraHeader[0]) || 0) : 0; // M1
+    const extraB = t01(behaviorVals[i][7]) ? -(Number(behaviorExtraHeader[1]) || 0) : 0; // N1
+    const extraC = t01(behaviorVals[i][8]) ? -(Number(behaviorExtraHeader[2]) || 0) : 0; // O1
+
+  const shouldLog = (earnedXP > 0) || (behaviorDebtDelta !== 0) || dailyComment || behaviorComment;
+  if (shouldLog) {
+      xpLogRows.push([
+        dateStr, name,
+        earnedXP, debtApplied, xpTowardLevel, xpOverflow, currencyGain,
+        totalDebt, cumXP, level, title,
+        testScore, fQuiz, fFaculty, fExit, fWriting, fKindness, fExpect,
+        part1, part2, part3, part4, part5,
+        bonusA, bonusB, bonusC, bonusD, participationCount,
+        fMinor, fWarn, fDisr, fRept, fSeri, fSevr,
+        extraA, extraB, extraC,
+        dailyComment, behaviorComment
+      ]);
+      commentEntries.push({ name, dailyComment, behaviorComment });
+      outDailyComments[i][0] = "";
+      outBehaviorComments[i][0] = "";
+      if (earnedXP > 0 || behaviorDebtDelta !== 0) leaderboardNeedsUpdate = true;
+  // Currency is tracked directly via XP Log (CurrencyGain col)
+      // Track per-guild daily XP (sum earnedXP for this run). Only count when a guild is assigned.
+      try {
+        const glabel = guildVals[i] || "";
+        if (glabel) {
+          guildDailyTotals[glabel] = (guildDailyTotals[glabel] || 0) + (Number(earnedXP) || 0);
+        }
+      } catch (e) {}
+    }
+  }
+
+  const rowsToWrite = lastIdx + 1;
+  if (rowsToWrite > 0) {
+    // Write B..I (8 columns); currency columns are no longer written on the tracker
+    tracker.getRange(2, 2, rowsToWrite, 8).setValues(outBJ.slice(0, rowsToWrite)); // B..I
+
+    // Clear any prior level-up highlights in the Name column for the processed rows
+    try {
+      tracker.getRange(2, 1, rowsToWrite, 1).setBackground(null);
+    } catch (e) {}
+    // Apply highlight for current run's level-ups (yellow background)
+    if (levelUpRows.length) {
+      const HIGHLIGHT_COLOR = '#FFF59D'; // soft yellow
+      levelUpRows.forEach(idx => {
+        try { tracker.getRange(idx + 2, 1).setBackground(HIGHLIGHT_COLOR); } catch (e) {}
+      });
+    }
+
+    // Reset inputs in bulk
+    daily.getRange(2, 2, rowsToWrite, 1).clearContent(); // Test (B)
+    try { uncheckSafe_(daily.getRange(2, 3, rowsToWrite, 6)); } catch (e) {}
+    try { uncheckSafe_(daily.getRange(2, 9, rowsToWrite, 5)); } catch (e) {}
+    try { uncheckSafe_(daily.getRange(2, 14, rowsToWrite, 4)); } catch (e) {}
+    try { uncheckSafe_(behavior.getRange(2, 2, rowsToWrite, 6)); } catch (e) {}
+    try { uncheckSafe_(behavior.getRange(2, 8, rowsToWrite, 3)); } catch (e) {}
+
+    // Comments: only clear those we logged
+    daily.getRange(2, 19, rowsToWrite, 1).setValues(outDailyComments.slice(0, rowsToWrite));
+    behavior.getRange(2, 12, rowsToWrite, 1).setValues(outBehaviorComments.slice(0, rowsToWrite));
+  }
+
+  if (xpLogRows.length) {
+  try { upsertXPLogRowsForDate_(dateStr, xpLogRows); } catch (e) {}
+  }
+  if (commentEntries.length) {
+    try { updateCommentsMatrixForLogs_("Comments (matrix)", dateStr, commentEntries); } catch (e) {}
+  }
+  // no separate currency ledger to write
+
+  if (leaderboardNeedsUpdate) updateLeaderboard();
+  // Nudge Currency summary formulas (reapply current formulas to trigger recalc)
+  try {
+    const cur = ensureCurrencySheet_();
+    for (let row = 2; row <= 26; row++) {
+      const fB = cur.getRange(row, 2).getFormula();
+      const fC = cur.getRange(row, 3).getFormula();
+      const fD = cur.getRange(row, 4).getFormula();
+      const fF = cur.getRange(row, 6).getFormula();
+      if (fB) cur.getRange(row, 2).setFormula(fB);
+      if (fC) cur.getRange(row, 3).setFormula(fC);
+      if (fD) cur.getRange(row, 4).setFormula(fD);
+      if (fF) cur.getRange(row, 6).setFormula(fF);
+    }
+  } catch (e) {}
+  // Persist today's per-guild totals for the leaderboard to consume when rendering the header summary
+  try {
+    const props = PropertiesService.getDocumentProperties();
+    const keys = Object.keys(guildDailyTotals || {});
+    if (keys.length) {
+      const payload = { date: dateStr, totals: guildDailyTotals };
+      props.setProperty('LATEST_GUILD_DAILY_XP', JSON.stringify(payload));
+    } else {
+      props.deleteProperty('LATEST_GUILD_DAILY_XP');
+    }
+  } catch (e) {}
+  try { lock.releaseLock(); } catch (e) {}
+}
+
+// One-time initializer: fill XP Log CurrencyGain (col G) for rows where it is 0/blank using 1:EXCHANGE_RATE rule on DailyTotalRaw
+// backfillCoinsFromXPLog removed — use recomputeCoinsCarryover instead
+
+// Normalize a sheet date cell to yyyy-mm-dd string safely
+function normalizeDateStr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+  const s = (v || '').toString().trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  return s;
+}
+
+// Build map name -> { applied: sum of XPToLevel (col E) before dateStr, minted: sum of positive CurrencyGain before dateStr }
+function getEarnedAndMintedBeforeDate_(dateStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('XP Log');
+  const out = {};
+  if (!log) return out;
+  const lastRow = log.getLastRow();
+  if (lastRow < 2) return out;
+  const n = lastRow - 1;
+  const dates = log.getRange(2, 1, n, 1).getValues(); // A
+  const names = log.getRange(2, 2, n, 1).getValues(); // B
+  const applied = log.getRange(2, 5, n, 1).getValues(); // E XPToLevel
+  const coins  = log.getRange(2, 7, n, 1).getValues(); // G
+  for (let i = 0; i < n; i++) {
+    const d = normalizeDateStr_(dates[i][0]);
+    if (!d || d >= dateStr) continue; // strictly before today
+    const nm = (names[i][0] || '').toString().trim();
+    if (!nm) continue;
+    const xp = Number(applied[i][0]) || 0;
+    const cg = Number(coins[i][0]) || 0;
+    if (!out[nm]) out[nm] = { applied: 0, minted: 0 };
+    out[nm].applied += xp;
+    if (cg > 0) out[nm].minted += cg;
+  }
+  return out;
+}
+
+// Recompute all positive CurrencyGain values across XP Log using carryover (cumulative XP / rate)
+function recomputeCoinsCarryover() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('XP Log');
+  if (!log) { try { ss.toast('XP Log not found.', 'Recompute', 3); } catch (e) {} return; }
+  try { enforceExchangeRate20_(); } catch (e) {}
+  const rate = Math.max(1, Number(getRuntimeConfig_().EXCHANGE_RATE) || 20);
+  const lastRow = log.getLastRow();
+  if (lastRow < 2) { try { ss.toast('No data to recompute.', 'Recompute', 3); } catch (e) {} return; }
+  const n = lastRow - 1;
+  const dates = log.getRange(2, 1, n, 1).getValues(); // A
+  const names = log.getRange(2, 2, n, 1).getValues(); // B
+  const applied = log.getRange(2, 5, n, 1).getValues(); // E XPToLevel
+  const coins  = log.getRange(2, 7, n, 1).getValues(); // G
+  // Build index array and sort by date ascending, then by original order
+  const idx = Array.from({length:n}, (_, i) => i);
+  idx.sort((i, j) => {
+    const di = normalizeDateStr_(dates[i][0]);
+    const dj = normalizeDateStr_(dates[j][0]);
+    if (di < dj) return -1; if (di > dj) return 1; return i - j;
+  });
+  const accumEarned = new Map();
+  const mintedSoFar = new Map();
+  const newCoins = coins.map(v => [Number(v[0]) || 0]);
+  let changes = 0;
+  for (const i of idx) {
+    const nm = (names[i][0] || '').toString().trim();
+    if (!nm) continue;
+    const xp = Number(applied[i][0]) || 0;
+    const prevEarn = accumEarned.get(nm) || 0;
+    const prevMint = mintedSoFar.get(nm) || 0;
+    let newMint = 0;
+    if (xp > 0) {
+      const total = prevEarn + xp;
+      newMint = Math.max(0, Math.floor(total / rate) - prevMint);
+    } else {
+      // No XP: mint stays 0 for this row unless previously set incorrectly (we'll reset to 0 if positive)
+      newMint = 0;
+    }
+    // Preserve spends (negative) exactly
+    const old = Number(coins[i][0]) || 0;
+    const isSpend = old < 0 || (xp === 0 && old < 0);
+    if (isSpend) {
+      // Do not alter negative entries, and do not affect mintedSoFar
+      newCoins[i][0] = old;
+    } else {
+      if (old !== newMint) { newCoins[i][0] = newMint; changes++; }
+      // Update mintedSoFar by the recomputed positive mint
+      if (newMint > 0) mintedSoFar.set(nm, prevMint + newMint);
+    }
+    // Always advance earned accumulator on XP rows
+    if (xp > 0) accumEarned.set(nm, prevEarn + xp);
+  }
+  if (changes > 0) log.getRange(2, 7, n, 1).setValues(newCoins);
+  try {
+    const cur = ensureCurrencySheet_();
+    for (let row = 2; row <= 26; row++) {
+      const fB = cur.getRange(row, 2).getFormula();
+      const fC = cur.getRange(row, 3).getFormula();
+      const fD = cur.getRange(row, 4).getFormula();
+      const fF = cur.getRange(row, 6).getFormula();
+      if (fB) cur.getRange(row, 2).setFormula(fB);
+      if (fC) cur.getRange(row, 3).setFormula(fC);
+      if (fD) cur.getRange(row, 4).setFormula(fD);
+      if (fF) cur.getRange(row, 6).setFormula(fF);
+    }
+  } catch (e) {}
+  try { ss.toast(`Recompute complete. Rows changed: ${changes}.`, 'Recompute', 4); } catch (e) {}
+}
+
+// Recompute positive CurrencyGain strictly per-day: floor(DailyTotalRaw / rate). Preserves negative spends.
+// recomputeCoinsPerDay removed — canonical recompute is carryover
+
+// Reset currency balances by clearing all positive CurrencyGain entries; keeps negative spends for audit.
+function resetCurrencyBalances() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('XP Log');
+  if (!log) { try { ss.toast('XP Log not found.', 'Reset Currency', 3); } catch (e) {} return; }
+  const lastRow = log.getLastRow();
+  if (lastRow < 2) { try { ss.toast('Nothing to reset.', 'Reset Currency', 3); } catch (e) {} return; }
+  const n = lastRow - 1;
+  const coins = log.getRange(2, 7, n, 1).getValues();
+  let cleared = 0;
+  const out = coins.map(v => {
+    const cur = Number(v[0]) || 0;
+    if (cur > 0) { cleared++; return [0]; }
+    return [cur];
+  });
+  log.getRange(2, 7, n, 1).setValues(out);
+  try {
+    const cur = ensureCurrencySheet_();
+    for (let row = 2; row <= 26; row++) {
+      const fB = cur.getRange(row, 2).getFormula();
+      const fC = cur.getRange(row, 3).getFormula();
+      const fD = cur.getRange(row, 4).getFormula();
+      const fF = cur.getRange(row, 6).getFormula();
+      if (fB) cur.getRange(row, 2).setFormula(fB);
+      if (fC) cur.getRange(row, 3).setFormula(fC);
+      if (fD) cur.getRange(row, 4).setFormula(fD);
+      if (fF) cur.getRange(row, 6).setFormula(fF);
+    }
+  } catch (e) {}
+  try { ss.toast(`Reset complete. Cleared ${cleared} earned entries.`, 'Reset Currency', 4); } catch (e) {}
+}
+
+// Build an audit sheet comparing expected coins (floor(total XP / rate)) vs actual minted/spent per student
+function currencyAudit() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try { enforceExchangeRate20_(); } catch (e) {}
+  const rate = Math.max(1, Number(getRuntimeConfig_().EXCHANGE_RATE) || 20);
+  const log = ss.getSheetByName('XP Log');
+  if (!log) { try { ss.toast('XP Log not found.', 'Currency Audit', 3); } catch (e) {} return; }
+  const lastRow = log.getLastRow();
+  const n = Math.max(0, lastRow - 1);
+  const names = n ? log.getRange(2, 2, n, 1).getValues().map(r => (r[0]||'').toString().trim()) : [];
+  const xp    = n ? log.getRange(2, 5, n, 1).getValues().map(r => Number(r[0])||0) : []; // E XPToLevel
+  const coins = n ? log.getRange(2, 7, n, 1).getValues().map(r => Number(r[0])||0) : [];
+  const by = new Map();
+  for (let i = 0; i < n; i++) {
+    const nm = names[i]; if (!nm) continue;
+    let rec = by.get(nm); if (!rec) { rec = { totalXP:0, earned:0, spent:0 }; by.set(nm, rec); }
+    rec.totalXP += xp[i] || 0;
+    const c = coins[i] || 0;
+    if (c > 0) rec.earned += c; else if (c < 0) rec.spent += -c;
+  }
+  const rows = Array.from(by.entries()).map(([nm, r]) => {
+    const expected = Math.floor((r.totalXP || 0) / rate);
+    const actual = r.earned || 0;
+    const diff = actual - expected;
+    const balance = (r.earned || 0) - (r.spent || 0);
+    return [nm, r.totalXP, expected, actual, r.spent, balance, diff];
+  });
+  let sh = ss.getSheetByName('Currency Audit');
+  if (!sh) sh = ss.insertSheet('Currency Audit');
+  sh.clear();
+  sh.getRange(1,1,1,7).setValues([[
+    'Name','Total Applied XP (E)','Expected Coins (floor(XP/rate))','Actual Coins Earned','Total Spent','Current Balance','Discrepancy (Actual-Expected)'
+  ]]).setFontWeight('bold');
+  if (rows.length) sh.getRange(2,1,rows.length,7).setValues(rows);
+  try {
+    sh.getRange(1,1,Math.max(2,rows.length+1),7).createFilter();
+    sh.autoResizeColumns(1,7);
+  } catch (e) {}
+  try { ss.toast('Currency Audit updated.', 'Currency Audit', 4); } catch (e) {}
+  try { SpreadsheetApp.setActiveSheet(sh); } catch (e) {}
+}
+
+
+// Append multiple XP Log rows in a single write
+function appendXPLogRows_(rows) {
+  const s = ensureXPLogSheet_();
+  const colCount = 38; // must match appendXPLogRow_ width
+  if (!rows || !rows.length) return;
+  // Ensure each row has the correct number of columns
+  const data = rows.map(r => {
+    if (r.length < colCount) return r.concat(Array(colCount - r.length).fill(""));
+    if (r.length > colCount) return r.slice(0, colCount);
+    return r;
+  });
+  const startRow = s.getLastRow() + 1;
+  s.getRange(startRow, 1, data.length, colCount).setValues(data);
+}
+
+// Append a spend entry into XP Log (negative CurrencyGain in col G) with note in DailyComment column
+function appendSpendToXPLog_(dateOnly, student, amount, note) {
+  const s = ensureXPLogSheet_();
+  const dateStr = Utilities.formatDate(dateOnly, TZ, 'yyyy-MM-dd');
+  const row = [
+    dateStr, student,
+    0, 0, 0, 0, -Math.abs(Number(amount)||0),
+    '', '', '', '',
+    '', '', '', '', '', '', '',
+    '', '', '', '', '',
+    '', '', '', '', '',
+    '', '', '', '', '',
+    '', '', '',
+    note || 'Shop spend'
+  ];
+  // Normalize width to 38
+  while (row.length < 38) row.push('');
+  const startRow = s.getLastRow() + 1;
+  s.getRange(startRow, 1, 1, 38).setValues([row]);
+}
+
+// Upsert: for a given date string (yyyy-MM-dd), ensure only one row per (date, student) exists.
+// If there are existing rows for that date/student, they are deleted first, then new rows are appended in batch.
+function upsertXPLogRowsForDate_(dateStr, rows) {
+  const s = ensureXPLogSheet_();
+  const colCount = 38;
+  if (!rows || !rows.length) return;
+  const lastRow = s.getLastRow();
+  if (lastRow >= 2) {
+    const dates = s.getRange(2, 1, lastRow - 1, 1).getValues(); // A
+    const names = s.getRange(2, 2, lastRow - 1, 1).getValues(); // B
+    // Build set of student names to be upserted (from incoming rows)
+    const upsertNames = new Set(rows.map(r => (r[1] || "").toString()));
+    // Collect row indices to delete (1-based absolute rows in sheet)
+    const toDelete = [];
+    for (let i = 0; i < lastRow - 1; i++) {
+      const d = (dates[i][0] || "").toString();
+      if (d !== dateStr) continue;
+      const n = (names[i][0] || "").toString();
+      if (upsertNames.has(n)) toDelete.push(i + 2);
+    }
+    // Delete from bottom to top to preserve indices
+    if (toDelete.length) {
+      toDelete.sort((a,b)=>b-a).forEach(r => { try { s.deleteRow(r); } catch (e) {} });
+    }
+  }
+  // Append the new data (normalized width)
+  const data = rows.map(r => {
+    if (r.length < colCount) return r.concat(Array(colCount - r.length).fill(""));
+    if (r.length > colCount) return r.slice(0, colCount);
+    return r;
+  });
+  const startRow = s.getLastRow() + 1;
+  s.getRange(startRow, 1, data.length, colCount).setValues(data);
+}
+
+// Build RichTextValue for comments: black daily (line 1), red behavior (line 2)
+function buildCommentRichText_(dailyComment, behaviorComment) {
+  const d = (dailyComment || "").toString().trim();
+  const b = (behaviorComment || "").toString().trim();
+  if (!d && !b) return null;
+  let text = ""; let ranges = [];
+  if (d) { text += d; ranges.push({start:0, end:d.length, color:null}); }
+  if (b) { const start = text.length ? (text += "\n", text.length) - 1 : 0; /* will be corrected below */ }
+  // Rebuild with exact control
+  text = "";
+  ranges = [];
+  if (d) { text += d; ranges.push({start:0, end:d.length, color:null}); }
+  if (b) {
+    if (text.length) text += "\n";
+    const start = text.length; text += b;
+    ranges.push({start, end:start + b.length, color:"#b71c1c"});
+  }
+  const builder = SpreadsheetApp.newRichTextValue().setText(text);
+  ranges.forEach(r => {
+    const style = SpreadsheetApp.newTextStyle();
+    if (r.color) builder.setTextStyle(r.start, r.end, style.setForegroundColor(r.color).build());
+    else builder.setTextStyle(r.start, r.end, style.build());
+  });
+  return builder.build();
+}
+
+// Batch update Comments (matrix) for a date and set of entries
+function updateCommentsMatrixForLogs_(sheetName, dateStr, entries) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  syncCommentsMatrixNames_(); // ensure all student columns exist
+  const s = ensureCommentsMatrixSheet_(sheetName);
+  const dateRow = getOrCreateDateRowIndex_(s, dateStr);
+  const lastCol = s.getLastColumn();
+  const header = s.getRange(1, 1, 1, lastCol).getValues()[0];
+  const nameToCol = new Map();
+  for (let j = 2; j <= lastCol; j++) {
+    const nm = (header[j - 1] || "").toString();
+    if (nm) nameToCol.set(nm, j);
+  }
+  // Read existing rich text values for the entire row
+  const rowRange = s.getRange(dateRow, 1, 1, lastCol);
+  let current = [[]];
+  try { current = rowRange.getRichTextValues(); } catch (e) {
+    // Fallback to plain values if rich text retrieval fails
+    const vals = rowRange.getValues()[0];
+    current = [vals.map(v => SpreadsheetApp.newRichTextValue().setText((v||'').toString()).build())];
+  }
+  // Apply updates
+  entries.forEach(ent => {
+    const col = nameToCol.get(ent.name);
+    if (!col) return;
+    const rich = buildCommentRichText_(ent.dailyComment, ent.behaviorComment);
+    current[0][col - 1] = rich || SpreadsheetApp.newRichTextValue().setText("").build();
+  });
+  // Ensure date cell contains the dateStr string (display formatting handles date look)
+  current[0][0] = SpreadsheetApp.newRichTextValue().setText(dateStr).build();
+  rowRange.setRichTextValues(current);
+}
+
+// Re-apply formulas/validations after changing XP Config (without clearing data)
+function refreshConfig() {
+  clearConfigCache_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const daily = ss.getSheetByName('Daily Checklist');
+  const behavior = ss.getSheetByName('Behavior Tracker');
+  ensureTestScoreMap_();
+  ensureConfigSettings_();
+  ensureAllHeadersAndDropdowns_();
+  protectHeaderRows_();
+  setupTestScoreDropdown_();
+  if (daily) { for (let row = 2; row <= 26; row++) setDailyTotalFormula_(daily, row); styleDailyChecklist_(); }
+  if (behavior) { for (let row = 2; row <= 26; row++) setBehaviorDebtFormula_(behavior, row); styleBehaviorTracker_(); }
+  // Ensure tracker headers/columns (including Guild column in L) are intact after refresh
+  ensureTrackerLayout_();
+  ensureGuildColumn_();
+  // Ensure Currency summary exists
+  try { ensureCurrencySheet_(); } catch (e) {}
+  protectNameColumns_();
+  // No currency columns to hide anymore
+  // Force leaderboard rebuild next call
+  try { PropertiesService.getDocumentProperties().deleteProperty('LB_SIG'); } catch (e) {}
+  // Mark init done (so daily processing won’t redo heavy setup)
+  try { PropertiesService.getDocumentProperties().setProperty('INIT_DONE', '1'); } catch (e) {}
+  updateLeaderboard();
+  try { SpreadsheetApp.getActive().toast('Config refreshed and formulas reapplied.', 'Config', 4); } catch (e) {}
+}
+
+
+// Compact mode toggle stored in document properties
+function toggleCompactMode() {
+  const props = PropertiesService.getDocumentProperties();
+  const cur = props.getProperty('COMPACT_MODE') === '1';
+  props.setProperty('COMPACT_MODE', cur ? '0' : '1');
+  updateLeaderboard();
+  try { SpreadsheetApp.getActive().toast(`Compact mode ${cur ? 'disabled' : 'enabled'}.`, 'View', 3); } catch (e) {}
+}
+
+function isCompactModeEnabled_() {
+  try {
+    return PropertiesService.getDocumentProperties().getProperty('COMPACT_MODE') === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+// Quick helper: pick N unique random full names and seed XP Tracker A2:A26
+function seedRandomNames() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const t = ss.getSheetByName('XP Tracker') || ss.insertSheet('XP Tracker');
+  ensureSheetSize_(t, 26, 12);
+  const firstNames = ['Alex','Jordan','Taylor','Morgan','Casey','Riley','Drew','Quinn','Avery','Sam','Jamie','Cameron','Rowan','Parker','Reese','Hayden','Emerson','Logan','Skyler','Sage','Ryan','Micah','Devon','Elliot','Kai','Remy','Shawn','Peyton','Nico','Shiloh'];
+  const lastNames  = ['Rivera','Kim','Patel','Nguyen','Garcia','Brown','Johnson','Lee','Wilson','Martinez','Lopez','Anderson','Thomas','Jackson','White','Harris','Clark','Lewis','Robinson','Walker','Young','Allen','King','Wright','Scott','Torres','Ng','Adams','Baker','Gonzalez'];
+  const used = new Set();
+  function pickName() {
+    let tries = 0;
+    while (tries++ < 200) {
+      const f = firstNames[Math.floor(Math.random() * firstNames.length)];
+      const l = lastNames[Math.floor(Math.random() * lastNames.length)];
+      const n = `${f} ${l}`;
+      if (!used.has(n)) { used.add(n); return n; }
+    }
+    return `Student ${used.size + 1}`;
+  }
+  const names = Array.from({length: 25}, () => [pickName()]);
+  t.getRange(2, 1, 25, 1).setValues(names);
+  try {
+    populateNameMirrors_();
+    protectNameColumns_();
+    ensureGuildColumn_();
+    syncCommentsMatrixNames_();
+    updateLeaderboard();
+    ss.toast('Seeded 25 random names in XP Tracker.', 'Seed', 3);
+  } catch (e) {}
+}
+
+// Randomize Daily Checklist checkboxes for all 25 student rows
+function randomizeDailyCheckboxes() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const daily = ss.getSheetByName('Daily Checklist');
+  if (!daily) return;
+  ensureSheetSize_(daily, 26, 19);
+  const testVals = Array.from({length:25}, () => [Math.floor(Math.random()*5)]);
+  daily.getRange(2, 2, 25, 1).setValues(testVals);
+  const rb = (p)=> Math.random() < p;
+  const probDaily = 0.6, probPartEach = 0.5, probBonus = 0.2;
+  const valsCH = Array.from({length:25}, () => Array.from({length:6}, () => [rb(probDaily)][0]));
+  const valsIM = Array.from({length:25}, () => Array.from({length:5}, () => [rb(probPartEach)][0]));
+  const valsNQ = Array.from({length:25}, () => Array.from({length:4}, () => [rb(probBonus)][0]));
+  daily.getRange(2, 3, 25, 6).setValues(valsCH);
+  daily.getRange(2, 9, 25, 5).setValues(valsIM);
+  daily.getRange(2, 14, 25, 4).setValues(valsNQ);
+  const bonusHeader = [[String(Math.floor(Math.random()*6)), String(Math.floor(Math.random()*6)), String(Math.floor(Math.random()*6)), String(Math.floor(Math.random()*6))]];
+  daily.getRange(1, 14, 1, 4).setValues(bonusHeader);
+  daily.getRange(2, 19, 25, 1).clearContent();
+  ss.toast('Randomized Daily Checklist for 25 rows.', 'Randomize', 3);
+}
+
+function populateNameMirrors_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const daily = ss.getSheetByName("Daily Checklist");
+  const behavior = ss.getSheetByName("Behavior Tracker");
+  const tracker = ss.getSheetByName("XP Tracker");
+  if (!tracker) throw new Error("XP Tracker sheet not found.");
+
+  const setMirrors = (sh, minCols) => {
+    if (!sh) return;
+    ensureSheetSize_(sh, 26, minCols);
+    sh.getRange("A1").setValue("Name");
+    // Clear existing content to allow ARRAYFORMULA to expand
+    const maxRows = Math.max(26, sh.getMaxRows());
+    if (maxRows > 1) sh.getRange(2, 1, maxRows - 1, 1).clearContent();
+    sh.getRange(2, 1).setFormula(`=ARRAYFORMULA(IF(LEN('XP Tracker'!A2:A), 'XP Tracker'!A2:A, ))`);
+  };
+
+  setMirrors(daily, 19);
+  setMirrors(behavior, 12);
+}
+
+function protectNameColumns_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ["Daily Checklist", "Behavior Tracker"]
+    .map(n => ss.getSheetByName(n))
+    .filter(sh => !!sh);
+  const desc = 'LOCK: Name column mirrors XP Tracker';
+  sheets.forEach(sh => {
+    try {
+      (sh.getProtections(SpreadsheetApp.ProtectionType.RANGE) || [])
+        .filter(p => {
+          try { return p.getDescription && p.getDescription() === desc; } catch (e) { return false; }
+        })
+        .forEach(p => p.remove());
+    } catch (e) {}
+
+    const lastRow = Math.max(26, sh.getMaxRows());
+    if (lastRow <= 1) return;
+    const rg = sh.getRange(2, 1, lastRow - 1, 1); // A2:A
+    const prot = rg.protect().setDescription(desc);
+    try {
+      const editors = prot.getEditors();
+      if (editors && editors.length) prot.removeEditors(editors);
+      if (prot.canDomainEdit()) prot.setDomainEdit(false);
+      prot.setWarningOnly(false);
+    } catch (e) {}
+  });
+}
+
+// Protect header row (row 1) on input sheets to prevent accidental clearing of labels
+function protectHeaderRows_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const items = [
+    { name: 'Daily Checklist', cols: 19 },
+    { name: 'Behavior Tracker', cols: 12 },
+  ];
+  const desc = 'LOCK: Header row';
+  items.forEach(it => {
+    const sh = ss.getSheetByName(it.name);
+    if (!sh) return;
+    try {
+      (sh.getProtections(SpreadsheetApp.ProtectionType.RANGE) || [])
+        .filter(p => {
+          try { return p.getDescription && p.getDescription() === desc; } catch (e) { return false; }
+        })
+        .forEach(p => p.remove());
+    } catch (e) {}
+    try {
+      const rg = sh.getRange(1, 1, 1, it.cols);
+      const prot = rg.protect().setDescription(desc);
+      const editors = prot.getEditors();
+      if (editors && editors.length) prot.removeEditors(editors);
+      if (prot.canDomainEdit()) prot.setDomainEdit(false);
+      prot.setWarningOnly(false);
+    } catch (e) {}
+  });
+}
+
+/**** DAILY FORMULAS & HEADERS ***********************************************/
+function setDailyTotalFormula_(daily, row) {
+  ensureTestScoreMap_(); // safe-guard
+  const w = getRuntimeConfig_().DAILY_WEIGHTS;
+  // Test contribution comes from 'XP Config'! (0→0, 1..4 → mapped XP)
+  const testTerm = `IFERROR(VLOOKUP(B${row}, 'XP Config'!$A$2:$B$6, 2, FALSE), 0)`;
+  const formula =
+    `${testTerm}+` +
+    `IF(C${row},${w.quiz},0)+IF(D${row},${w.faculty},0)+` +
+    `IF(E${row},${w.exitTicket},0)+IF(F${row},${w.writing},0)+IF(G${row},${w.kindness},0)+` +
+    `IF(H${row},${w.expectations},0)+` +
+    `IF(I${row},${w.participationEach},0)+IF(J${row},${w.participationEach},0)+` +
+    `IF(K${row},${w.participationEach},0)+IF(L${row},${w.participationEach},0)+` +
+    `IF(M${row},${w.participationEach},0)+` +
+    `IF(N${row}=TRUE,VALUE($N$1),0)+IF(O${row}=TRUE,VALUE($O$1),0)+` +
+    `IF(P${row}=TRUE,VALUE($P$1),0)+IF(Q${row}=TRUE,VALUE($Q$1),0)`;
+  daily.getRange(`R${row}`).setFormula(formula);
+}
+
+function setupDailyHeaderDropdowns_() {
+  const daily = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Daily Checklist");
+  if (!daily) return;
+  ensureSheetSize_(daily, 26, 19);
+
+  // Bonus headers 0..10
+  const list = ['0','1','2','3','4','5','6','7','8','9','10'];
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(list, true)
+    .setAllowInvalid(false)
+    .build();
+  [["N1","Bonus A value"],["O1","Bonus B value"],["P1","Bonus C value"],["Q1","Bonus D value"]].forEach(([a1, note]) => {
+    const r = daily.getRange(a1);
+    r.setValue("0");
+    r.setDataValidation(rule).setNote(`${note} (0–10). Applied only when that row's checkbox is checked.`);
+  });
+
+  // Label/note for Test column
+  daily.getRange("B1").setNote("Enter test score 0–4; XP granted per mapping in 'XP Config'.");
+}
+
+// Ensure human-readable column labels on Daily Checklist
+function ensureDailyHeaderLabels_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Daily Checklist");
+  if (!sh) return;
+  ensureSheetSize_(sh, 26, 19);
+  // Clear any validations on label-only header cells to avoid conflicts
+  try { sh.getRange(1, 1, 1, 13).clearDataValidations(); } catch (e) {}
+  try { sh.getRange(1, 18, 1, 2).clearDataValidations(); } catch (e) {}
+  // Include point values in headers using current config
+  const w = getRuntimeConfig_().DAILY_WEIGHTS;
+  const plus = (n) => `(+${Number(n)||0})`;
+  const labelsLeft = [[
+    "Name",
+    "Test (variable)",
+    `Quiz ${plus(w.quiz)}`,
+    `Faculty ${plus(w.faculty)}`,
+    `Exit Ticket ${plus(w.exitTicket)}`,
+    `Writing ${plus(w.writing)}`,
+    `Kindness ${plus(w.kindness)}`,
+    `Expectations ${plus(w.expectations)}`,
+    `Part1 ${plus(w.participationEach)}`,
+    `Part2 ${plus(w.participationEach)}`,
+    `Part3 ${plus(w.participationEach)}`,
+    `Part4 ${plus(w.participationEach)}`,
+    `Part5 ${plus(w.participationEach)}`
+  ]];
+  sh.getRange(1, 1, 1, labelsLeft[0].length).setValues(labelsLeft);
+  sh.getRange(1, 18, 1, 2).setValues([["Daily Total","Comments"]]);
+}
+
+/**** BEHAVIOR FORMULAS & HEADERS *********************************************/
+function setBehaviorDebtFormula_(behavior, row) {
+  const bp = getRuntimeConfig_().BEHAVIOR_PENALTIES;
+  const formula =
+    `=IF(B${row},${bp.minor},0)+IF(C${row},${bp.warning},0)+IF(D${row},${bp.disrupt},0)+` +
+    `IF(E${row},${bp.repeat},0)+IF(F${row},${bp.serious},0)+IF(G${row},${bp.severe},0)+` +
+    `IF(H${row},-VALUE($M$1),0)+IF(I${row},-VALUE($N$1),0)+IF(J${row},-VALUE($O$1),0)`;
+  behavior.getRange(`K${row}`).clearDataValidations().setFormula(formula);
+}
+
+function setupBehaviorHeaderDropdowns_() {
+  const behavior = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Behavior Tracker");
+  if (!behavior) return;
+  // Ensure hidden value holders in M1:O1 exist (cols 13..15)
+  ensureSheetSize_(behavior, 26, 15);
+  // Clear any legacy validations on visible header label cells H1:J1
+  try { behavior.getRange(1, 8, 1, 3).clearDataValidations(); } catch (e) {}
+  const list = ['0','1','2','3','4','5','6','7','8','9','10'];
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(list, true).setAllowInvalid(false).build();
+  // Place numeric values in hidden cells M1:O1 to keep visible headers readable
+  [["M1","Extra penalty A"],["N1","Extra penalty B"],["O1","Extra penalty C"]].forEach(([a1, note]) => {
+    const r = behavior.getRange(a1);
+    r.setValue("0");
+    r.setDataValidation(rule).setNote(`${note} (0–10). Applied as NEGATIVE when the row's checkbox is checked.`);
+  });
+  // Hide the value holder columns to avoid UI clutter
+  try { behavior.hideColumns(13, 3); } catch (e) {}
+}
+
+// Ensure human-readable column labels on Behavior Tracker
+function ensureBehaviorHeaderLabels_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Behavior Tracker");
+  if (!sh) return;
+  ensureSheetSize_(sh, 26, 12);
+  // Clear any validations on the visible header label row to avoid conflicts when writing text
+  try { sh.getRange(1, 1, 1, 12).clearDataValidations(); } catch (e) {}
+  const bp = getRuntimeConfig_().BEHAVIOR_PENALTIES;
+  // Read current Extra A/B/C numeric values from hidden M1:O1 if present
+  let extraA = 0, extraB = 0, extraC = 0;
+  try {
+    const vals = sh.getRange(1, 13, 1, 3).getValues()[0];
+    extraA = Number(vals[0]) || 0;
+    extraB = Number(vals[1]) || 0;
+    extraC = Number(vals[2]) || 0;
+  } catch (e) {}
+  const neg = (n) => `(${Number(n)||0})`;
+  const labels = [[
+    "Name",
+    `Minor ${neg(bp.minor)}`,
+    `Warning ${neg(bp.warning)}`,
+    `Disrupt ${neg(bp.disrupt)}`,
+    `Repeat ${neg(bp.repeat)}`,
+    `Serious ${neg(bp.serious)}`,
+    `Severe ${neg(bp.severe)}`,
+    `Extra A (${-(extraA)})`,
+    `Extra B (${-(extraB)})`,
+    `Extra C (${-(extraC)})`,
+    "Debt","Comments"
+  ]];
+  sh.getRange(1,1,1,labels[0].length).setValues(labels);
+}
+
+// Enforce headers and header dropdowns for both input sheets
+function ensureAllHeadersAndDropdowns_() {
+  try { ensureDailyHeaderLabels_(); } catch (e) {}
+  try { setupDailyHeaderDropdowns_(); } catch (e) {}
+  try { ensureBehaviorHeaderLabels_(); } catch (e) {}
+  try { setupBehaviorHeaderDropdowns_(); } catch (e) {}
+}
+
+// Run header/dropdown/protection setup once per document (or when explicitly refreshed)
+function maybeEnsureInit_() {
+  // Run header/dropdown/protection setup once per document (or when explicitly refreshed).
+  const props = PropertiesService.getDocumentProperties();
+  if (props.getProperty('INIT_DONE') === '1') return;
+  try { ensureAllHeadersAndDropdowns_(); } catch (e) {}
+  try { protectHeaderRows_(); } catch (e) {}
+  props.setProperty('INIT_DONE', '1');
+}
+
+/**** TRACKER LAYOUT / FORMATTING *********************************************/
+function ensureTrackerLayout_() {
+  const tracker = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("XP Tracker");
+  if (!tracker) return;
+  // Ensure room for all tracker columns including Guild in J (after removing currency columns)
+  ensureSheetSize_(tracker, 26, 10);
+
+  tracker.getRange("A1").setValue("Name");
+  tracker.getRange("B1").setValue("Title");
+  tracker.getRange("C1").setValue("CumXP");
+  tracker.getRange("D1").setValue("Level");
+  tracker.getRange("E1").setValue("XP in Level");
+  tracker.getRange("F1").setValue("XP to Next");
+  tracker.getRange("G1").setValue("Progress Bar");
+  tracker.getRange("H1").setValue("Progress %");
+  tracker.getRange("I1").setValue("XP Debt");
+  // Remove legacy currency headers (J/K) if present and set Guild at J
+  try {
+    const lastCol = tracker.getLastColumn();
+    const headers = tracker.getRange(1, 1, 1, lastCol).getValues()[0].map(v => (v||'').toString());
+    const toDelete = [];
+    for (let c = headers.length; c >= 1; c--) {
+      const h = headers[c-1];
+      if (h === 'Currency (Today)' || h === 'StoredCurrency') toDelete.push(c);
+    }
+    // delete from right to left
+    toDelete.sort((a,b)=>b-a).forEach(c => { try { tracker.deleteColumn(c); } catch (e) {} });
+  } catch (e) {}
+  tracker.getRange("J1").setValue("Guild");
+  try {
+  const hdr = tracker.getRange(1, 1, 1, 10);
+    hdr.setFontWeight('bold').setHorizontalAlignment('center');
+  } catch (e) {}
+  // Match existing sheet styling: copy formatting from a nearby column (B) to Guild column (L)
+  try {
+  // Header row
+  tracker.getRange(1, 2, 1, 1).copyFormatToRange(tracker, 10, 10, 1, 1);
+  // Data rows 2..26
+  tracker.getRange(2, 2, 25, 1).copyFormatToRange(tracker, 10, 10, 2, 26);
+  } catch (e) {}
+
+  try { tracker.hideColumn(tracker.getRange("C:C")); } catch (e) {}
+
+  applyNegativeRedFormatting_(tracker, "I2:I1000"); // XP Debt red when <0
+  const behavior = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Behavior Tracker");
+  if (behavior) applyNegativeRedFormatting_(behavior, "K2:K1000");
+
+  ensureGuildColumn_();
+}
+
+// Guild column validation and highlighting, rows 2..26 only
+function ensureGuildColumn_() {
+  const tracker = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("XP Tracker");
+  if (!tracker) return;
+  // Ensure room for the Guild column at J (10th col)
+  ensureSheetSize_(tracker, 26, 10);
+
+  // Migrate any legacy Guild values from old column K to new column L
+  // Attempt migration from legacy L or K to new J
+  try {
+    const allowed = new Set(GUILDS.map(g => g.label));
+    const legacyL = tracker.getMaxColumns() >= 12 ? tracker.getRange(2, 12, 25, 1).getValues() : Array.from({length:25},()=>[""]);
+    const legacyK = tracker.getMaxColumns() >= 11 ? tracker.getRange(2, 11, 25, 1).getValues() : Array.from({length:25},()=>[""]);
+    const curJ    = tracker.getRange(2, 10, 25, 1).getValues();
+    let changed = false;
+    for (let i = 0; i < 25; i++) {
+      const jv = (curJ[i][0] || '').toString().trim();
+      if (jv) continue;
+      const lv = (legacyL[i][0] || '').toString().trim();
+      const kv = (legacyK[i][0] || '').toString().trim();
+      const pick = allowed.has(lv) ? lv : (allowed.has(kv) ? kv : '');
+      if (pick) { curJ[i][0] = pick; changed = true; }
+    }
+    if (changed) tracker.getRange(2, 10, 25, 1).setValues(curJ);
+  } catch (e) {}
+
+  // Guilds now in J2:J1000
+  try { tracker.getRange("J2:J1000").clearDataValidations(); } catch (e) {}
+  const list = GUILDS.map(g => g.label);
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(list, true)
+    .setAllowInvalid(false)
+    .build();
+    tracker.getRange("J2:J26").setDataValidation(rule)
+         .setNote("Select a guild (Guild 1 / Guild 2 / Guild 3).");
+
+  // Replace any existing K-column rules with fresh ones scoped to K2:K26
+  const rules = tracker.getConditionalFormatRules();
+  const filtered = rules.filter(r => {
+    try {
+      return !r.getRanges().some(rg => {
+        const c = rg.getColumn(), w = rg.getNumColumns();
+        const r0 = rg.getRow(), h = rg.getNumRows();
+        // Only remove rules that precisely target the Guild picker area (J2:J*)
+        return c === 10 && w === 1 && r0 === 2; // e.g., J2:J26
+      });
+    } catch (e) { return true; }
+  });
+  const newRules = GUILDS.map(g =>
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(g.label)
+      .setBackground(g.bg)
+      .setFontColor(g.fg)
+      .setRanges([tracker.getRange("J2:J26")])
+      .build()
+  );
+  tracker.setConditionalFormatRules(filtered.concat(newRules));
+}
+
+function applyNegativeRedFormatting_(sheet, a1Range) {
+  const range = sheet.getRange(a1Range);
+  const rules = sheet.getConditionalFormatRules() || [];
+  // Remove any existing rules that target this range (to avoid duplicates)
+  const filtered = rules.filter(r => {
+    try {
+      return !r.getRanges().some(rg => rg.getA1Notation() === a1Range);
+    } catch (e) { return true; }
+  });
+  const rule = SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberLessThan(0)
+    .setFontColor("#b71c1c")
+    .setRanges([range])
+    .build();
+  sheet.setConditionalFormatRules(filtered.concat([rule]));
+}
+
+/***** FANTASY LEADERBOARD (with spacers) ************************************/
+function rankBadge_(rank) {
+  if (!rank) return "";
+  if (rank === 1) return "🏆 1";
+  if (rank === 2) return "🏅 2";
+  if (rank === 3) return "🎖️ 3";
+  return String(rank);
+}
+
+// Emoji badge by numeric tier (kept for reuse in other contexts)
+function levelBadge_(level) {
+  const n = Number(level) || 0;
+  switch (n) {
+    case 1:  return "🌱"; // Novice
+    case 2:  return "🧩"; // Learner
+    case 3:  return "🔰"; // Apprentice
+    case 4:  return "🗡️"; // Adept
+    case 5:  return "🛡️"; // Guardian
+    case 6:  return "⚗️"; // Alchemist
+    case 7:  return "✨"; // Enchanter
+    case 8:  return "🧙"; // Wizard
+    case 9:  return "💫"; // Archmage
+    case 10: return "🌟"; // Master
+    default: return "";
+  }
+}
+
+// Emoji badge picked by exact title for visual alignment with names
+function titleBadge_(title) {
+  const t = (title || '').toString();
+  const map = {
+    'Sparkling Novice': '🌱',
+    'Rune Reader': '📜',
+    'Potion Apprentice': '🧪',
+  'Spell Slinger': '🎆',
+    'Wand Wielder': '🪄',
+    'Magic Adept': '✨',
+    'Enchanted Knight': '🛡️',
+    'Arcane Scholar': '📘',
+    'Mystic Champion': '🏅',
+    'Master Spellcaster': '🌟',
+    'Sunmere Guardian': '☀️',
+    'Keeper of the Archives': '🏛️',
+  'Chronomancer of Light': '👑'
+  };
+  return map[t] || '';
+}
+
+function setupLeaderboardFrameNoPct_(lb, title, fantasyFont, fallbackFont, _bg, _fg, barSegments, barStartCol) {
+  const LEFT_BRACE_COL  = barStartCol - 1;
+  const RIGHT_BRACE_COL = barStartCol + barSegments;
+  const NEXT_XP_COL     = RIGHT_BRACE_COL + 1; // new column: XP needed for next level
+  const TOTAL_XP_COL    = RIGHT_BRACE_COL + 2;
+  const totalCols       = TOTAL_XP_COL;
+
+  // Ensure room for title (row 1), guild summary (row 2), and headers (row 3)
+  ensureSheetSize_(lb, 3, totalCols);
+
+  const PARCHMENT = "#FBF7E9";
+  const INK       = "#3D2B1F";
+
+  lb.setColumnWidths(1, totalCols, 18);
+  lb.setColumnWidth(1, 100);
+  lb.setColumnWidth(2, 280);
+  lb.setColumnWidth(3, 360);
+  lb.setColumnWidth(4, 120);
+  lb.setColumnWidth(LEFT_BRACE_COL, 26);
+  for (let c = barStartCol; c < barStartCol + barSegments; c++) lb.setColumnWidth(c, 22);
+  const centerOffset = Math.floor((barSegments - 1) / 2);
+  lb.setColumnWidth(barStartCol + centerOffset, 40);
+  lb.setColumnWidth(RIGHT_BRACE_COL, 26);
+  lb.setColumnWidth(NEXT_XP_COL, 120);
+  lb.setColumnWidth(TOTAL_XP_COL, 150);
+
+  lb.setHiddenGridlines(true);
+
+  lb.getRange(1, 1).setValue("").setBackground(PARCHMENT).setBorder(false, false, false, false, false, false);
+  lb.getRange(1, 2, 1, totalCols - 1).merge()
+    .setValue("🪄  Student Leaderboard  🪄")
+    .setHorizontalAlignment("center")
+    .setFontFamily(fantasyFont + ", " + fallbackFont)
+    .setFontSize(30).setFontWeight("bold")
+    .setFontColor(INK).setBackground(PARCHMENT)
+    .setWrap(false)
+    .setBorder(false, false, false, false, false, false);
+
+  const headers = ["Rank", "Name", "Title", "Level"];
+  lb.getRange(3, 1, 1, headers.length).setValues([headers])
+    .setFontFamily(fantasyFont + ", " + fallbackFont).setFontSize(14).setFontWeight("bold")
+    .setHorizontalAlignment("center").setFontColor(INK).setBackground(PARCHMENT)
+    .setWrap(false).setBorder(false, false, false, false, false, false);
+
+  lb.getRange(3, barStartCol, 1, barSegments).merge()
+    .setValue("✨ Progress ✨")
+    .setHorizontalAlignment("center").setFontSize(12).setFontColor(INK)
+    .setBackground(PARCHMENT).setWrap(false).setBorder(false, false, false, false, false, false);
+
+  lb.getRange(3, LEFT_BRACE_COL).setValue("").setBackground(PARCHMENT).setBorder(false, false, false, false, false, false);
+  lb.getRange(3, RIGHT_BRACE_COL).setValue("").setBackground(PARCHMENT).setBorder(false, false, false, false, false, false);
+  lb.getRange(3, NEXT_XP_COL).setValue("XP to Next")
+    .setHorizontalAlignment("center")
+    .setFontFamily(fantasyFont + ", " + fallbackFont).setFontSize(14).setFontWeight("bold")
+    .setFontColor(INK).setBackground(PARCHMENT).setWrap(false)
+    .setBorder(false, false, false, false, false, false);
+  lb.getRange(3, TOTAL_XP_COL).setValue("Total XP")
+    .setHorizontalAlignment("center")
+    .setFontFamily(fantasyFont + ", " + fallbackFont).setFontSize(14).setFontWeight("bold")
+    .setFontColor(INK).setBackground(PARCHMENT).setWrap(false)
+    .setBorder(false, false, false, false, false, false);
+
+  lb.setRowHeights(1, 1, 46);
+  lb.setRowHeights(3, 1, 30);
+}
+
+function drawBarsWithSpacers_(lb, firstDataRow, colStart, segments, progresses, colorFill, colorEmpty, barRowHeight, spacerRowHeight) {
+  const num = progresses.length;
+  if (num === 0) return;
+  const totalRows = num * 2; // data + spacer rows
+  const block = lb.getRange(firstDataRow, colStart, totalRows, segments);
+  // Build background matrix for entire block
+  const bgs = Array.from({ length: totalRows }, (_, r) => {
+    if (r % 2 === 1) return Array(segments).fill(colorEmpty); // spacer row
+    const idx = Math.floor(r / 2);
+    const p = Math.max(0, Math.min(1, Number(progresses[idx]) || 0));
+    const filled = Math.round(p * segments);
+    return Array.from({ length: segments }, (_, c) => c < filled ? colorFill : colorEmpty);
+  });
+  try { block.clearContent(); } catch (e) {}
+  block.setBackgrounds(bgs).setBorder(false, false, false, false, false, false);
+  // Set row heights in two quick passes
+  for (let i = 0; i < num; i++) {
+    const row = firstDataRow + i * 2;
+    const spacer = row + 1;
+    lb.setRowHeight(row, barRowHeight);
+    lb.setRowHeight(spacer, spacerRowHeight);
+  }
+}
+
+function updateLeaderboard() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tracker = ss.getSheetByName("XP Tracker");
+  if (!tracker) throw new Error("XP Tracker sheet not found.");
+
+  // --- Compute signature FIRST (from tracker only). If unchanged, bail early. ---
+  const lastRow = tracker.getLastRow();
+  const n = Math.max(0, lastRow - 1);
+
+  const names    = n ? tracker.getRange(2, 1, n, 1).getValues().map(r => (r[0]||"").toString().trim()) : [];
+  const titles   = n ? tracker.getRange(2, 2, n, 1).getValues().map(r => (r[0]||"").toString().trim()) : [];
+  const cumXPs   = n ? tracker.getRange(2, 3, n, 1).getValues().map(r => Number(r[0])||0) : [];
+  const levels   = n ? tracker.getRange(2, 4, n, 1).getValues().map(r => Number(r[0])||0) : [];
+  const progress = n ? tracker.getRange(2, 8, n, 1).getValues().map(r => {
+                      const v = Number(r[0]); return isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
+                    }) : [];
+  // Guilds now live in column J (10)
+  const guildVals = n ? tracker.getRange(2, 10, n, 1).getValues().map(r => (r[0]||"").toString().trim()) : [];
+
+  // Include participation streaks in signature so badge changes trigger rebuilds
+  const streaks = computeParticipationStreaks_();
+
+  const sigParts = [];
+  for (let i = 0; i < n; i++) {
+    if (!names[i]) continue;
+    const streakCount = (streaks[names[i]] && streaks[names[i]].count) || 0;
+    sigParts.push(names[i], String(cumXPs[i]||0), String(levels[i]||0), String(progress[i]||0), guildVals[i]||"", String(streakCount));
+  }
+  const sig = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, sigParts.join('|'))
+      .map(function(c){return String.fromCharCode(c)}).join('')
+  );
+  const props = PropertiesService.getDocumentProperties();
+  const prevSig = props.getProperty('LB_SIG');
+  if (prevSig && prevSig === sig) {
+    // No changes; skip costly rebuild
+    return;
+  }
+
+  // --- Only now touch the Leaderboard sheet ---
+  const SHEET_NAME = "Leaderboard";
+  let lb = ss.getSheetByName(SHEET_NAME);
+  if (!lb) lb = ss.insertSheet(SHEET_NAME);
+
+  lb.clear({ contentsOnly: false });
+  breakAllMerges_(lb);
+  lb.setFrozenRows(0);
+  lb.setFrozenColumns(0);
+  lb.setHiddenGridlines(true);
+
+  const BAR_SEGMENTS   = 36;
+  const ROW_START      = 4;   // first data row (row 2 guild summary, row 3 headers)
+  const NUM_ROWS       = 25;  // entries
+  const ROW_STEP       = 2;   // spacer between rows
+  const BAR_START_COL  = 6;   // F
+  const LEFT_BRACE_COL = BAR_START_COL - 1;
+  const RIGHT_BRACE_COL= BAR_START_COL + BAR_SEGMENTS;
+  const NEXT_XP_COL    = RIGHT_BRACE_COL + 1; // new: XP to next
+  const TOTAL_XP_COL   = RIGHT_BRACE_COL + 2;
+  const TOTAL_COLS     = TOTAL_XP_COL;
+
+  const PARCHMENT  = "#FBF7E9";
+  const INK        = "#3D2B1F";
+  const BAR_FILL   = "#6E4AB1";
+  const BAR_EMPTY  = "#F3EFE3";
+
+  setupLeaderboardFrameNoPct_(lb, "Student Leaderboard", FANTASY_FONT, NAME_FONT_FALLBACK, null, null, BAR_SEGMENTS, BAR_START_COL);
+
+  // Map name -> guild for accurate coloring after sorting
+  const guildByName = {};
+  for (let i = 0; i < n; i++) {
+    const nm = names[i];
+    if (nm) guildByName[nm] = guildVals[i] || "";
+  }
+  const guildColorByLabel = GUILDS.reduce((m,g)=>{ m[g.label]=g.bg; return m; }, {});
+
+  // Guild summary: prefer latest per-day totals (if present) stored by processDailyXP; fall back to cumulative sums
+  const guildStats = new Map();
+  let persistedDaily = null;
+  try {
+    const props = PropertiesService.getDocumentProperties();
+    const raw = props.getProperty('LATEST_GUILD_DAILY_XP');
+    if (raw) persistedDaily = JSON.parse(raw);
+  } catch (e) { persistedDaily = null; }
+
+  // If stored payload includes a date, ensure it's today's date; otherwise ignore to avoid stale displays
+  const todayStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
+  if (persistedDaily && persistedDaily.date && persistedDaily.totals) {
+    if (persistedDaily.date !== todayStr) persistedDaily = null;
+    else persistedDaily = persistedDaily.totals;
+  }
+
+  if (persistedDaily && Object.keys(persistedDaily).length) {
+    // Use persisted per-guild XP totals only if there are actually members in the tracker
+    for (let i = 0; i < n; i++) {
+      const nm = names[i];
+      const g  = guildVals[i];
+      if (!nm || !g) continue;
+      const entry = guildStats.get(g) || { members: 0, xp: 0 };
+      entry.members += 1; guildStats.set(g, entry);
+    }
+    // If no members found in tracker, ignore persistedDaily as it is stale
+    const totalMembers = Array.from(guildStats.values()).reduce((s, v) => s + (v.members || 0), 0);
+    if (totalMembers === 0) {
+      // fall back to cumulative behavior below
+      persistedDaily = null;
+    } else {
+      Object.keys(persistedDaily).forEach(k => {
+        const entry = guildStats.get(k) || { members: 0, xp: 0 };
+        entry.xp = Number(persistedDaily[k]) || 0;
+        guildStats.set(k, entry);
+      });
+    }
+  }
+
+  if (!persistedDaily || Object.keys(persistedDaily).length === 0) {
+    // Fallback to previous behavior: sum cumulative XP per guild
+    for (let i = 0; i < n; i++) {
+      const nm = names[i];
+      const g  = guildVals[i];
+      if (!nm || !g) continue;
+      const cum = Number(cumXPs[i]) || 0;
+      const entry = guildStats.get(g) || { members: 0, xp: 0 };
+      entry.members += 1; entry.xp += cum; guildStats.set(g, entry);
+    }
+  }
+
+  if (guildStats.size) {
+    const rg = lb.getRange(2, 2, 1, TOTAL_COLS - 1);
+    try { rg.merge(); } catch (e) {}
+    const topLeft = rg.getCell(1,1);
+    rg.setFontColor(INK);
+    const parts = [];
+    const seen = new Set();
+    GUILDS.forEach(g => { if (guildStats.has(g.label)) { parts.push({label:g.label, color:g.bg, data:guildStats.get(g.label)}); seen.add(g.label);} });
+    guildStats.forEach((v,k)=>{ if(!seen.has(k)) parts.push({label:k, color:guildColorByLabel[k] || null, data:v}); });
+    let text = '';
+    const spans = [];
+    parts.forEach((p, idx) => {
+      const sep = idx === 0 ? '' : '   |   ';
+      const bullet = '● ';
+      const segment = `${sep}${bullet}${p.label}: ${p.data.xp.toLocaleString()} XP`;
+      const start = text.length + sep.length;
+      text += segment;
+      const labelStart = start + bullet.length;
+      spans.push({ s: labelStart, e: labelStart + p.label.length, color: p.color, bold: true });
+    });
+    const builder = SpreadsheetApp.newRichTextValue().setText(text);
+    spans.forEach(sp => {
+      const style = SpreadsheetApp.newTextStyle().setBold(sp.bold);
+      if (sp.color) style.setForegroundColor(sp.color);
+      builder.setTextStyle(sp.s, sp.e, style.build());
+    });
+    topLeft.setRichTextValue(builder.build());
+    rg.setHorizontalAlignment('center')
+      .setFontFamily(FANTASY_FONT + ", " + NAME_FONT_FALLBACK)
+      .setFontSize(isCompactModeEnabled_() ? 10 : 12)
+      .setFontStyle('italic');
+  }
+
+  const populated = [];
+  for (let i = 0; i < n; i++) {
+    if (!names[i]) continue;
+    const title = titles[i] || determineTitle(cumXPs[i], levels[i]);
+    populated.push({ name: names[i], title, level: levels[i], cumXP: cumXPs[i], progress: progress[i] });
+  }
+  populated.sort((a,b) => (b.level - a.level) || (b.cumXP - a.cumXP));
+
+  let rank = 0, pos = 0, prevL = null, prevXP = null;
+  for (const r of populated) {
+    pos++;
+    if (r.level !== prevL || r.cumXP !== prevXP) { rank = pos; prevL = r.level; prevXP = r.cumXP; }
+    r.rank = rank;
+  }
+
+  const rows = populated.slice(0, NUM_ROWS);
+  while (rows.length < NUM_ROWS) rows.push({ name:"", title:"", level:"", cumXP:"", progress:0, rank:null });
+
+  const requiredRows = ROW_START + (NUM_ROWS * ROW_STEP) - 1;
+  ensureSheetSize_(lb, requiredRows, TOTAL_COLS);
+
+  const all = lb.getRange(1, 1, requiredRows, TOTAL_COLS);
+  all.setBackground(PARCHMENT)
+    .setFontFamily(FANTASY_FONT + ", " + NAME_FONT_FALLBACK)
+    .setBorder(false, false, false, false, false, false);
+  lb.getRange(1, 1, 1, TOTAL_COLS).setFontColor(INK);
+  if (requiredRows > 2) lb.getRange(3, 1, requiredRows - 2, TOTAL_COLS).setFontColor(INK);
+
+  const dataRowsAll = NUM_ROWS * ROW_STEP;
+  const dataRowsIdx = Array.from({length: NUM_ROWS}, (_, i) => ROW_START + i * ROW_STEP);
+  const compact = isCompactModeEnabled_();
+  const nameFont = compact ? 16 : 18;
+  const titleFont = compact ? 14 : 16;
+
+  const colRank = Array.from({ length: dataRowsAll }, () => [""]);
+  const colNameRt = Array.from({ length: dataRowsAll }, () => [SpreadsheetApp.newRichTextValue().setText("").build()]);
+  const colTitle = Array.from({ length: dataRowsAll }, () => [""]);
+  const colLevel = Array.from({ length: dataRowsAll }, () => [""]);
+  const nameNotes = Array.from({ length: NUM_ROWS }, () => "");
+  for (let i = 0; i < NUM_ROWS; i++) {
+    const r = rows[i];
+    const rowOffset = i * ROW_STEP;
+    colRank[rowOffset][0] = rankBadge_(r.rank);
+    colTitle[rowOffset][0] = r.title ? `✧ ${r.title} ✧` : "";
+    const lvl = r.level || 0;
+    const badge = titleBadge_(r.title || "");
+    colLevel[rowOffset][0] = lvl ? `${badge ? badge + ' ' : ''}${lvl}` : (badge || "");
+    const nameText = r.name || "";
+    const guildLabel = guildByName[nameText] || "";
+    const color = guildColorByLabel[guildLabel];
+    const streak = streaks[nameText];
+    const badgeSuffix = streak && streak.badge ? ` ${streak.badge}` : "";
+    if (nameText && color) {
+      const bullet = "● ";
+      const fullText = bullet + nameText + badgeSuffix;
+      const builder = SpreadsheetApp.newRichTextValue().setText(fullText);
+      const styleBullet = SpreadsheetApp.newTextStyle().setForegroundColor(color).build();
+      const styleName = SpreadsheetApp.newTextStyle().setForegroundColor(color).build();
+      builder.setTextStyle(0, bullet.length, styleBullet);
+      builder.setTextStyle(bullet.length, bullet.length + nameText.length, styleName);
+      colNameRt[rowOffset][0] = builder.build();
+    } else {
+      colNameRt[rowOffset][0] = SpreadsheetApp.newRichTextValue().setText(nameText + badgeSuffix).build();
+    }
+    let note = guildLabel ? `Guild: ${guildLabel}` : "";
+    if (streak && streak.count > 0) note += (note ? "\n" : "") + `Participation streak: ${streak.count} day(s)`;
+    // Add a per-badge hover legend for clarity
+    if (streak && streak.badge) {
+      const c = streak.count || 0;
+      let badgeLine = '';
+      if (c >= 20) badgeLine = 'Badge: 🏆 — 20+ day streak';
+      else if (c >= 15) badgeLine = 'Badge: 💎 — 15+ day streak';
+      else if (c >= 10) badgeLine = 'Badge: 💥 — 10+ day streak';
+      else if (c >= 5)  badgeLine = 'Badge: 🔥 — 5+ day streak';
+      if (badgeLine) note += (note ? "\n" : "") + badgeLine;
+    }
+    nameNotes[i] = note;
+  }
+
+  lb.getRange(ROW_START, 1, dataRowsAll, 1).setValues(colRank).setHorizontalAlignment("center").setFontSize(nameFont);
+  const nameRg = lb.getRange(ROW_START, 2, dataRowsAll, 1);
+  try { nameRg.setRichTextValues(colNameRt); } catch (e) { nameRg.setValues(colNameRt.map(rt => [rt[0].getText ? rt[0].getText() : ""])); }
+  nameRg.setFontSize(nameFont);
+  lb.getRange(ROW_START, 3, dataRowsAll, 1).setValues(colTitle).setFontSize(titleFont).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  lb.getRange(ROW_START, 4, dataRowsAll, 1).setValues(colLevel).setHorizontalAlignment("center").setFontSize(titleFont);
+
+  rows.forEach((r, i) => {
+    const lvlCell = lb.getRange(ROW_START + i * ROW_STEP, 4);
+    if (r.level && r.title) lvlCell.setNote(`Level ${r.level} — ${r.title}`); else lvlCell.clearNote();
+    const nameCell = lb.getRange(ROW_START + i * ROW_STEP, 2);
+    const note = nameNotes[i];
+    if (note) nameCell.setNote(note); else nameCell.clearNote();
+  });
+
+  for (let i = 0; i < NUM_ROWS; i++) {
+    const rankVal = rows[i].rank;
+    const rankCell = lb.getRange(ROW_START + i * ROW_STEP, 1);
+    if (rankVal === 1 || rankVal === 2 || rankVal === 3) {
+      const bg = rankVal === 1 ? "#FFD700" : rankVal === 2 ? "#C0C0C0" : "#CD7F32";
+      rankCell.setBackground(bg).setFontColor("#3D2B1F").setFontWeight("bold");
+    } else {
+      rankCell.setBackground(null).setFontColor(INK).setFontWeight("normal");
+    }
+  }
+
+  // XP-to-next column values
+  const xpNextVals = Array.from({ length: dataRowsAll }, (_, r) => {
+    if (r % ROW_STEP !== 0) return [""];
+    const i = Math.floor(r / ROW_STEP);
+    const rp = rows[i];
+    if (!rp || !rp.cumXP) return [""];
+    const lvl = Number(rp.level) || getLevelFromXP(Number(rp.cumXP) || 0);
+    const xpForLevel = getXPForLevel(lvl);
+    // xp remaining to next level: if xpForLevel===0 (max level), show 0
+    let xpInLevel = 0;
+    try { xpInLevel = Number(rp.cumXP) - levelThresholds[lvl - 1]; } catch (e) { xpInLevel = 0; }
+    const xpToNext = xpForLevel === 0 ? 0 : Math.max(0, xpForLevel - (xpInLevel || 0));
+    return [xpToNext];
+  });
+  lb.getRange(ROW_START, NEXT_XP_COL, dataRowsAll, 1)
+    .setValues(xpNextVals)
+    .setHorizontalAlignment("center")
+    .setFontSize(14)
+    .setNumberFormat("#,##0");
+
+  const totalVals = Array.from({ length: dataRowsAll }, (_, r) => {
+    if (r % ROW_STEP !== 0) return [""];
+    const i = Math.floor(r / ROW_STEP);
+    return [rows[i].cumXP || ""];
+  });
+  lb.getRange(ROW_START, TOTAL_XP_COL, dataRowsAll, 1)
+    .setValues(totalVals)
+    .setHorizontalAlignment("center")
+    .setFontSize(14)
+    .setNumberFormat("#,##0");
+
+  const BRACE_COL = "#5E35B1";
+  const leftBraces = Array.from({ length: dataRowsAll }, (_, r) => [r % ROW_STEP === 0 ? "༺" : ""]);
+  const rightBraces = Array.from({ length: dataRowsAll }, (_, r) => [r % ROW_STEP === 0 ? "༻" : ""]);
+  lb.getRange(ROW_START, LEFT_BRACE_COL, dataRowsAll, 1).setValues(leftBraces).setHorizontalAlignment("center").setFontSize(22).setFontColor(BRACE_COL);
+  lb.getRange(ROW_START, RIGHT_BRACE_COL, dataRowsAll, 1).setValues(rightBraces).setHorizontalAlignment("center").setFontSize(22).setFontColor(BRACE_COL);
+
+  const BAR_ROW_HEIGHT = 14;
+  const SPACER_HEIGHT  = 14;
+  drawBarsWithSpacers_(lb, ROW_START, BAR_START_COL, BAR_SEGMENTS, rows.map(r => r.progress),
+                       BAR_FILL, BAR_EMPTY, BAR_ROW_HEIGHT, SPACER_HEIGHT);
+
+  const centerOffset = Math.floor((BAR_SEGMENTS - 1) / 2);
+  const pctCol = BAR_START_COL + centerOffset;
+  const pctValues = Array.from({ length: dataRowsAll }, (_, r) => {
+    if (r % ROW_STEP !== 0) return [""];
+    const i = Math.floor(r / ROW_STEP);
+    return [`${Math.round(((rows[i].progress || 0) * 100))}%`];
+  });
+  lb.getRange(ROW_START, pctCol, dataRowsAll, 1).setValues(pctValues)
+    .setHorizontalAlignment("center")
+    .setFontFamily(FANTASY_FONT + ", " + NAME_FONT_FALLBACK)
+    .setFontSize(16).setFontWeight("bold");
+  const pctColors = Array.from({ length: dataRowsAll }, (_, r) => {
+    if (r % ROW_STEP !== 0) return ["#3D2B1F"];
+    const i = Math.floor(r / ROW_STEP);
+    const filled = Math.round((rows[i].progress || 0) * BAR_SEGMENTS);
+    return [centerOffset < filled ? "#FFFFFF" : "#3D2B1F"];
+  });
+  lb.getRange(ROW_START, pctCol, dataRowsAll, 1).setFontColors(pctColors);
+
+  lb.setFrozenRows(3);
+  lb.setFrozenColumns(1);
+  try {
+    const guildRg = lb.getRange(2, 2, 1, TOTAL_COLS - 1);
+    try { guildRg.merge(); } catch (e) {}
+    guildRg.setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(false);
+  } catch (e) {}
+
+  // Store new signature
+  try { props.setProperty('LB_SIG', sig); } catch (e) {}
+}
+
+
+
+// Compute recent contiguous participation streak per student (ignores unlogged days)
+function computeParticipationStreaks_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('XP Log');
+  const out = {};
+  if (!log) return out;
+  const lastRow = log.getLastRow();
+  if (lastRow < 2) return out;
+  // Only read the columns we need: A (Date), B (Student), AB (ParticipationCount=28)
+  const dateVals = log.getRange(2, 1, lastRow - 1, 1).getValues();
+  const nameVals = log.getRange(2, 2, lastRow - 1, 1).getValues();
+  const partVals = log.getRange(2, 28, lastRow - 1, 1).getValues();
+  // Build map: name -> (date -> latest partCount for that date). This dedupes multiple runs in same day.
+  const byNameDate = new Map();
+  for (let i = 0; i < lastRow - 1; i++) {
+    const dateStr = (dateVals[i][0] || '').toString();
+    const name = (nameVals[i][0] || '').toString();
+    if (!name || !dateStr) continue;
+    const partCount = Number(partVals[i][0]) || 0;
+    let dateMap = byNameDate.get(name);
+    if (!dateMap) { dateMap = new Map(); byNameDate.set(name, dateMap); }
+    // Later rows overwrite earlier ones, so we keep the last seen value for the date
+    dateMap.set(dateStr, partCount);
+  }
+  const badgeFor = (n) => {
+    if (n >= 20) return '🏆';
+    if (n >= 15) return '💎';
+    if (n >= 10) return '💥';
+    if (n >= 5)  return '🔥';
+    return '';
+  };
+  // For each name, sort unique dates desc and count contiguous qualifying days from most recent
+  byNameDate.forEach((dateMap, name) => {
+    const arr = Array.from(dateMap.entries()).map(([d, p]) => ({ d, p }));
+    arr.sort((a,b) => a.d < b.d ? 1 : (a.d > b.d ? -1 : 0));
+    let streak = 0;
+    for (const it of arr) {
+      if ((Number(it.p) || 0) >= 3) streak++; else break;
+    }
+    out[name] = { count: streak, badge: badgeFor(streak) };
+  });
+  return out;
+}
+
+/***** CLEAR HELPERS **********************************************************/
+function clearLeaderboardFormatting() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const lb = ss.getSheetByName("Leaderboard");
+  if (!lb) return;
+
+  try {
+    const imgs = lb.getImages ? lb.getImages() : [];
+    if (imgs && imgs.length) imgs.forEach(img => img.remove());
+  } catch (e) {}
+
+  breakAllMerges_(lb);
+  lb.setConditionalFormatRules([]);
+  lb.clear({ contentsOnly: false });
+  lb.setFrozenRows(0);
+  lb.setFrozenColumns(0);
+  lb.setHiddenGridlines(false);
+}
+
+function clearLogs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const xpLog = ss.getSheetByName("XP Log");
+  if (xpLog) {
+    const lastRow = xpLog.getLastRow();
+    if (lastRow > 1) xpLog.deleteRows(2, lastRow - 1);
+  }
+  const cm = ss.getSheetByName("Comments (matrix)");
+  if (cm) {
+    const lastRow = cm.getLastRow();
+    const lastCol = cm.getLastColumn();
+    if (lastRow > 1) cm.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+}
+
+// Full reset for testing: clears all data (including names), comments, logs, and reapplies formulas
+function resetAllData() {
+  const lock = LockService.getDocumentLock();
+  try { lock.tryLock(30000); } catch (e) {}
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const daily = ss.getSheetByName('Daily Checklist') || ss.insertSheet('Daily Checklist');
+  const behavior = ss.getSheetByName('Behavior Tracker') || ss.insertSheet('Behavior Tracker');
+  const tracker = ss.getSheetByName('XP Tracker') || ss.insertSheet('XP Tracker');
+
+  // Standardize sizes
+  ensureSheetSize_(daily, 26, 19);
+  ensureSheetSize_(behavior, 26, 12);
+  ensureSheetSize_(tracker, 26, 10);
+
+  // Clear all content and validations
+  daily.clear();
+  behavior.clear();
+  tracker.clear();
+
+  // Reset Logs and Comments (matrix)
+  const xpLog = ss.getSheetByName('XP Log');
+  if (xpLog) ss.deleteSheet(xpLog);
+  const cm = ss.getSheetByName('Comments (matrix)');
+  if (cm) ss.deleteSheet(cm);
+
+  // Recreate config and headers
+  ensureTestScoreMap_();
+  ensureConfigSettings_();
+
+  // Tracker headers
+  tracker.getRange('A1:J1').clear();
+  tracker.getRange('A1').setValue('Name');
+  tracker.getRange('B1').setValue('Title');
+  tracker.getRange('C1').setValue('CumXP');
+  tracker.getRange('D1').setValue('Level');
+  tracker.getRange('E1').setValue('XP in Level');
+  tracker.getRange('F1').setValue('XP to Next');
+  tracker.getRange('G1').setValue('Progress Bar');
+  tracker.getRange('H1').setValue('Progress %');
+  tracker.getRange('I1').setValue('XP Debt');
+  tracker.getRange('J1').setValue('Guild');
+
+  // Reset tracker calculated columns and formatting
+  for (let row = 2; row <= 26; row++) {
+    tracker.getRange(`B${row}`).setValue('');
+    tracker.getRange(`C${row}`).setValue(0);
+    tracker.getRange(`D${row}`).setValue(1).setNumberFormat('0');
+    tracker.getRange(`E${row}`).setValue(0);
+    tracker.getRange(`F${row}`).setValue(getXPForLevel(1));
+    tracker.getRange(`G${row}`).setFormula(`=SPARKLINE(H${row}, {"charttype","bar";"max",1;"color1","green"})`);
+    tracker.getRange(`H${row}`).setValue(0).setNumberFormat('0.0%');
+    tracker.getRange(`I${row}`).setValue(0);
+  // currency columns removed
+  }
+  ensureGuildColumn_();
+  try { tracker.hideColumn(tracker.getRange('C:C')); } catch (e) {}
+  applyNegativeRedFormatting_(tracker, 'I2:I1000');
+
+  // Daily & Behavior headers and inputs
+  ensureAllHeadersAndDropdowns_();
+  protectHeaderRows_();
+  daily.getRange('C2:H26').insertCheckboxes();
+  daily.getRange('I2:M26').insertCheckboxes();
+  daily.getRange('N2:Q26').insertCheckboxes();
+  daily.getRange('R2:R26').clearDataValidations().setNumberFormat('0');
+  for (let row = 2; row <= 26; row++) setDailyTotalFormula_(daily, row);
+
+  ensureBehaviorHeaderLabels_();
+  behavior.getRange('B2:G26').insertCheckboxes();
+  behavior.getRange('H2:J26').insertCheckboxes();
+  behavior.getRange('K2:K26').clearDataValidations();
+  for (let row = 2; row <= 26; row++) setBehaviorDebtFormula_(behavior, row);
+  applyNegativeRedFormatting_(behavior, 'K2:K1000');
+
+  // Mirror and protect Names via ARRAYFORMULA
+  populateNameMirrors_();
+  protectNameColumns_();
+
+  // Recreate Comments (matrix) sheet with header only
+  ensureCommentsMatrixSheet_('Comments (matrix)');
+  syncCommentsMatrixNames_();
+  // Ensure Currency summary exists (fresh)
+  try { ensureCurrencySheet_(); } catch (e) {}
+
+  // Leaderboard fresh render
+  clearLeaderboardFormatting();
+  try { PropertiesService.getDocumentProperties().deleteProperty('LB_SIG'); } catch (e) {}
+  updateLeaderboard();
+
+  // Styles
+  styleDailyChecklist_();
+  styleBehaviorTracker_();
+
+  try { lock.releaseLock(); } catch (e) {}
+}
+
+// Open or create the Currency sheet and activate it
+function openCurrencySheet() {
+  const s = ensureCurrencySheet_();
+  try { SpreadsheetApp.setActiveSheet(s); } catch (e) {}
+}
+
+// openCurrencyLog removed
+
+// Simple list of student names from XP Tracker
+function listStudents_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const t = ss.getSheetByName('XP Tracker');
+  if (!t) return [];
+  const n = Math.max(0, t.getLastRow() - 1);
+  if (n <= 0) return [];
+  return t.getRange(2, 1, n, 1).getValues().map(r => (r[0]||'').toString().trim()).filter(Boolean);
+}
+
+function getCoinBalance(name) {
+  const map = getCurrencyBalanceByStudent_();
+  return Number(map[name] || 0);
+}
+
+// Spend coins from a student with balance validation
+function spendCoins(student, amount, note) {
+  const name = (student || '').toString().trim();
+  const amt = Math.floor(Number(amount) || 0);
+  if (!name) throw new Error('Student is required.');
+  if (!isFinite(amt) || amt <= 0) throw new Error('Amount must be a positive integer.');
+  const balance = getCoinBalance(name);
+  if (balance < amt) throw new Error(`Insufficient coins. Balance: ${balance}, required: ${amt}`);
+  const dateOnly = todayDateOnly_();
+  appendSpendToXPLog_(dateOnly, name, amt, (note || 'Shop spend'));
+  return getCoinBalance(name);
+}
+
+// Basic spend dialog for quick shop entries
+function showSpendCoinsDialog() {
+  const names = listStudents_();
+  const options = names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  const html = HtmlService.createHtmlOutput(`<!DOCTYPE html>
+  <html><head><meta charset="UTF-8"/>
+  <style>
+    body{font-family:Arial, sans-serif;padding:16px;}
+    label{display:block;margin:8px 0 4px;}
+    input,select,button{font-size:14px;padding:6px}
+    .row{margin-bottom:10px}
+    .err{color:#b71c1c;margin-top:8px}
+    .ok{color:#1b5e20;margin-top:8px}
+  </style></head>
+  <body>
+    <h3>Spend Coins (Shop)</h3>
+    <div class="row">
+      <label>Student</label>
+      <select id="student">${options}</select>
+    </div>
+    <div class="row">
+      <label>Amount (coins)</label>
+      <input type="number" id="amount" min="1" value="1"/>
+    </div>
+    <div class="row">
+      <label>Item / Note</label>
+      <input type="text" id="note" placeholder="e.g., Health Potion"/>
+    </div>
+    <div class="row"><button id="spend">Spend</button> <button id="close">Close</button></div>
+    <div id="msg"></div>
+    <script>
+      function setMsg(txt, ok){ const el = document.getElementById('msg'); el.className = ok?'ok':'err'; el.textContent = txt; }
+      function refreshBalance(){
+        const name = document.getElementById('student').value;
+        google.script.run.withSuccessHandler(function(b){ setMsg('Balance: '+b+' coin(s)', true); }).getCoinBalance(name);
+      }
+      document.getElementById('student').addEventListener('change', refreshBalance);
+      document.getElementById('spend').addEventListener('click', function(){
+        const name = document.getElementById('student').value;
+        const amt = parseInt(document.getElementById('amount').value, 10) || 0;
+        const note = document.getElementById('note').value || '';
+        setMsg('Processing...', true);
+        google.script.run.withSuccessHandler(function(newBal){
+          setMsg('Success. New balance: '+newBal+' coin(s).', true);
+          refreshBalance();
+        }).withFailureHandler(function(err){ setMsg(err && err.message ? err.message : String(err), false); })
+        .spendCoins(name, amt, note);
+      });
+      document.getElementById('close').addEventListener('click', function(){ google.script.host.close(); });
+      // Initial
+      refreshBalance();
+    </script>
+  </body></html>`).setWidth(420).setHeight(360);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Spend Coins');
+}
+
+/***** LOGGING ****************************************************************/
+function appendXPLogRow_(o) {
+  const s = ensureXPLogSheet_();
+  s.appendRow([
+    o.dateStr, o.name,
+    o.dailyTotalRaw, o.debtApplied, o.xpToLevel, o.overflowXP, o.currencyGain,
+    o.debtAfter, o.cumXPAfter, o.levelAfter, o.titleAfter,
+    o.fTest, o.fQuiz, o.fFaculty, o.fExit, o.fWriting, o.fKindness, o.fExpect,
+    o.part1, o.part2, o.part3, o.part4, o.part5,
+    o.bonusA, o.bonusB, o.bonusC, o.bonusD, o.participationCount,
+    o.fMinor, o.fWarn, o.fDisr, o.fRept, o.fSeri, o.fSevr,
+    o.extraA, o.extraB, o.extraC,
+    o.dailyComment, o.behaviorComment
+  ]);
+}
+function ensureXPLogSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName("XP Log");
+  if (!sh) sh = ss.insertSheet("XP Log");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow([
+      "Date","Student",
+      "DailyTotalRaw","DebtApplied","XPToLevel","OverflowXP","CurrencyGain",
+      "DebtAfter","CumXPAfter","LevelAfter","TitleAfter",
+      "Test","Quiz","Faculty","ExitTicket","Writing","Kindness","Expectations",
+      "Part1","Part2","Part3","Part4","Part5",
+      "BonusA","BonusB","BonusC","BonusD","ParticipationCount",
+      "Minor","Warning","Disruption","Repeated","Serious","Severe",
+      "ExtraA","ExtraB","ExtraC",
+      "DailyComment","BehaviorComment"
+    ]);
+  }
+  return sh;
+}
+
+/**** CURRENCY LEDGER & SUMMARY **********************************************/
+// Compute current coin balances by student from XP Log (sum of CurrencyGain col G)
+function getCurrencyBalanceByStudent_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s = ss.getSheetByName('XP Log');
+  const out = {};
+  if (!s) return out;
+  const lastRow = s.getLastRow();
+  if (lastRow < 2) return out;
+  const names = s.getRange(2, 2, lastRow - 1, 1).getValues(); // B
+  const gains = s.getRange(2, 7, lastRow - 1, 1).getValues(); // G CurrencyGain
+  for (let i = 0; i < lastRow - 1; i++) {
+    const n = (names[i][0] || '').toString().trim();
+    if (!n) continue;
+    const d = Number(gains[i][0]) || 0;
+    out[n] = (out[n] || 0) + d;
+  }
+  return out;
+}
+
+  // Teacher-facing summary sheet (Currency):
+// A Name | B Coins Earned Today | C Total Earned | D Total Spent | E Spend Now (input) | F Current Balance
+function ensureCurrencySheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('Currency');
+  if (!sh) sh = ss.insertSheet('Currency');
+  // Headers
+  sh.getRange('A1').setValue('Name');
+  sh.getRange('B1').setValue('Coins Earned Today');
+  sh.getRange('C1').setValue('Total Earned');
+  sh.getRange('D1').setValue('Total Spent');
+  sh.getRange('E1').setValue('Spend Now');
+  sh.getRange('F1').setValue('Current Balance');
+  // Size and styles
+  ensureSheetSize_(sh, 26, 6);
+  try {
+    sh.setFrozenRows(1);
+    const head = sh.getRange(1,1,1,6);
+    head.setFontWeight('bold');
+    // Soft yellow on usable rows only
+    sh.getRange('B2:B26').setBackground('#FFF9C4');
+    // Clear any prior full-column shading outside usable area
+    try {
+      const maxRows = sh.getMaxRows();
+      if (maxRows >= 1) sh.getRange(1,2,1,1).setBackground(null); // B1
+      if (maxRows > 26) sh.getRange(27,2, maxRows - 26, 1).setBackground(null); // B27:B
+    } catch (e) {}
+    sh.getRange('B2:F26').setNumberFormat('0');
+  } catch (e) {}
+  // Mirror names
+  try {
+    // Clear below header to let ARRAYFORMULA expand
+    const maxRows = Math.max(26, sh.getMaxRows());
+    if (maxRows > 1) sh.getRange(2, 1, maxRows - 1, 1).clearContent();
+    sh.getRange('A2').setFormula("=ARRAYFORMULA(IF(LEN('XP Tracker'!A2:A), 'XP Tracker'!A2:A, ))");
+  } catch (e) {}
+  // Per-row formulas
+  for (let row = 2; row <= 26; row++) {
+    const nameRef = `$A${row}`;
+    const today = 'TODAY()';
+    // Coins Earned Today (sum positive gains for today in XP Log — Date stored as text yyyy-mm-dd)
+    sh.getRange(row, 2).setFormula(
+      `=IF(LEN(${nameRef})=0,"",IFERROR(SUMIFS('XP Log'!$G:$G,'XP Log'!$B:$B,${nameRef},'XP Log'!$A:$A,TEXT(${today},"yyyy-mm-dd"),'XP Log'!$G:$G,">0"),0))`
+    );
+    // Total Earned (sum positive gains)
+    sh.getRange(row, 3).setFormula(
+      `=IF(LEN(${nameRef})=0,"",IFERROR(SUMIFS('XP Log'!$G:$G,'XP Log'!$B:$B,${nameRef},'XP Log'!$G:$G,">0"),0))`
+    );
+    // Total Spent (sum negative gains, shown positive)
+    sh.getRange(row, 4).setFormula(
+      `=IF(LEN(${nameRef})=0,"",-IFERROR(SUMIFS('XP Log'!$G:$G,'XP Log'!$B:$B,${nameRef},'XP Log'!$G:$G,"<0"),0))`
+    );
+    // Spend Now is user input; clear validation and set numeric rule
+    try {
+      const rg = sh.getRange(row, 5);
+      rg.clearDataValidations();
+      const rule = SpreadsheetApp.newDataValidation().requireNumberGreaterThanOrEqualTo(1).setAllowInvalid(false).build();
+      rg.setDataValidation(rule).setNote('Enter coins to spend; posting will deduct and clear this cell.');
+    } catch (e) {}
+    // Current Balance = Earned - Spent
+    sh.getRange(row, 6).setFormula(`=IF(LEN(${nameRef})=0,"", C${row}-D${row})`);
+  }
+  // Banding
+  try {
+    (sh.getBandings()||[]).forEach(b=>b.remove());
+    const rng = sh.getRange(1,1,26,6);
+    const band = rng.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
+    band.setHeaderRowColor('#EDE8D9');
+    band.setFirstRowColor('#FFFFFF');
+    band.setSecondRowColor('#F7F5ED');
+  } catch (e) {}
+  return sh;
+}
+
+/**** COMMENTS MATRIX *********************************************************/
+function setCommentsMatrixValue_(sheetName, dateStr, student, dailyComment, behaviorComment) {
+  const s = ensureCommentsMatrixSheet_(sheetName);
+  const row = getOrCreateDateRowIndex_(s, dateStr);
+  const col = getOrCreateStudentColIndex_(s, student);
+  const d = (dailyComment || "").toString().trim();
+  const b = (behaviorComment || "").toString().trim();
+
+  if (!d && !b) { s.getRange(row, col).setValue(""); return; }
+
+  let text = "", ranges = [];
+  if (d) { text += d; ranges.push({start:0, end:d.length, color:null}); }
+  if (b) {
+    if (text.length) text += "\n";
+    const start = text.length; text += b;
+    ranges.push({start, end:start + b.length, color:"#b71c1c"});
+  }
+
+  const builder = SpreadsheetApp.newRichTextValue().setText(text);
+  ranges.forEach(r => {
+    const style = SpreadsheetApp.newTextStyle();
+    if (r.color) builder.setTextStyle(r.start, r.end, style.setForegroundColor(r.color).build());
+    else builder.setTextStyle(r.start, r.end, style.build());
+  });
+  const cell = s.getRange(row, col);
+  cell.setRichTextValue(builder.build());
+  cell.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+}
+function ensureCommentsMatrixSheet_(name) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let s = ss.getSheetByName(name);
+  if (!s) {
+    s = ss.insertSheet(name);
+    let names = [];
+    try {
+      const first = ss.getSheets()[0];
+      if (first) {
+        const lastRow = first.getLastRow();
+        const n = Math.max(0, lastRow - 1);
+        if (n > 0) names = first.getRange(2, 1, n, 1).getValues().map(r => (r[0] || "").toString()).filter(x => x);
+      }
+    } catch (e) {}
+    if (names.length === 0) {
+      const tracker = ss.getSheetByName("XP Tracker");
+      const lastRow = tracker ? tracker.getLastRow() : 1;
+      const n = Math.max(0, lastRow - 1);
+      if (n > 0) names = tracker.getRange(2, 1, n, 1).getValues().map(r => (r[0] || "").toString()).filter(x => x);
+    }
+    s.appendRow(["Date"].concat(names));
+  }
+  if (s.getLastRow() === 0) s.appendRow(["Date"]);
+  // Ensure column A (Date) uses a consistent display format
+  try { s.getRange("A:A").setNumberFormat("yyyy-mm-dd"); } catch (e) {}
+  return s;
+}
+function getOrCreateDateRowIndex_(sheet, dateStr) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    sheet.appendRow(["Date"]);
+  }
+  const nRows = sheet.getLastRow();
+  const vals = nRows > 1 ? sheet.getRange(2, 1, nRows - 1, 1).getValues() : [];
+  const normalize = (v) => {
+    if (v instanceof Date) {
+      return Utilities.formatDate(v, TZ, "yyyy-MM-dd");
+    }
+    const s = (v || "").toString().trim();
+    if (!s) return "";
+    // If already yyyy-mm-dd, keep it
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, TZ, "yyyy-MM-dd");
+    return s;
+  };
+  const matches = [];
+  for (let i = 0; i < vals.length; i++) {
+    const norm = normalize(vals[i][0]);
+    if (norm === dateStr) matches.push(2 + i); // row index
+  }
+  if (matches.length === 0) {
+    sheet.appendRow([dateStr]);
+    return sheet.getLastRow();
+  }
+  // Deduplicate: keep first occurrence; delete later ones bottom-up
+  const keep = matches[0];
+  for (let k = matches.length - 1; k >= 1; k--) {
+    try { sheet.deleteRow(matches[k]); } catch (e) {}
+  }
+  return keep;
+}
+function getOrCreateStudentColIndex_(sheet, student) {
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1,1,1,lastCol).getValues()[0];
+  let j = header.findIndex((v, i) => i>0 && (v || "").toString() === student);
+  if (j !== -1) return j + 1;
+  sheet.getRange(1, lastCol + 1).setValue(student);
+  return lastCol + 1;
+}
+
+// Keep Comments (matrix) header in sync with XP Tracker names
+function syncCommentsMatrixNames_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tracker = ss.getSheetByName("XP Tracker");
+  if (!tracker) return;
+  const cm = ensureCommentsMatrixSheet_("Comments (matrix)");
+
+  const lastRow = tracker.getLastRow();
+  const n = Math.max(0, lastRow - 1);
+  const names = n ? tracker.getRange(2, 1, n, 1).getValues()
+                    .map(r => (r[0] || "").toString().trim())
+                    .filter(v => v) : [];
+  if (names.length === 0) return;
+
+  const lastCol = cm.getLastColumn();
+  const header = cm.getRange(1, 1, 1, lastCol).getValues()[0];
+  const existing = new Set(header.slice(1).map(v => (v || "").toString()));
+  let col = lastCol;
+  names.forEach(name => {
+    if (!existing.has(name)) {
+      col += 1;
+      cm.getRange(1, col).setValue(name);
+      existing.add(name);
+    }
+  });
+}
+
+/**** ALTERNATING SHADING FOR INPUT SHEETS ************************************/
+function styleDailyChecklist_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Daily Checklist");
+  if (!sh) return;
+  ensureSheetSize_(sh, 26, 19);
+  (sh.getBandings() || []).forEach(b => b.remove());
+  const rng = sh.getRange(1, 1, 26, 19);
+  const band = rng.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
+  band.setHeaderRowColor("#EDE8D9");
+  band.setFirstRowColor("#FFFFFF");
+  band.setSecondRowColor("#F7F5ED");
+  try { sh.setFrozenRows(1); sh.setFrozenColumns(1); } catch (e) {}
+  // Reassert header labels (ensures R1/S1 are present)
+  try { ensureDailyHeaderLabels_(); } catch (e) {}
+}
+function styleBehaviorTracker_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Behavior Tracker");
+  if (!sh) return;
+  ensureSheetSize_(sh, 26, 12);
+  (sh.getBandings() || []).forEach(b => b.remove());
+  const rng = sh.getRange(1, 1, 26, 12);
+  const band = rng.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
+  band.setHeaderRowColor("#EDE8D9");
+  band.setFirstRowColor("#FFFFFF");
+  band.setSecondRowColor("#F7F5ED");
+  try { sh.setFrozenRows(1); sh.setFrozenColumns(1); } catch (e) {}
+  // Reassert header labels (ensures all Behavior headers are present)
+  try { ensureBehaviorHeaderLabels_(); } catch (e) {}
+}
+
+/**** RANGE/FORMAT UTILITIES **************************************************/
+function to01_(v) { return v === true ? 1 : 0; }
+function uncheckSafe_(range) { try { range.uncheck(); } catch (e) { try { range.setValue(false); } catch (_) {} } }
+function ensureSheetSize_(sheet, minRows, minCols) {
+  if (!sheet) return;
+  const curRows = sheet.getMaxRows();
+  if (curRows < minRows) sheet.insertRowsAfter(curRows, minRows - curRows);
+  const curCols = sheet.getMaxColumns();
+  if (curCols < minCols) sheet.insertColumnsAfter(curCols, minCols - curCols);
+}
+function breakAllMerges_(sheet) {
+  try {
+    const rng = sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns());
+    const merges = rng.getMergedRanges();
+    if (merges && merges.length) merges.forEach(m => m.breakApart());
+  } catch (e) {}
+}
+
+/**** CONFIG SHEET (Test score→XP) ********************************************/
+function ensureTestScoreMap_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let cfg = ss.getSheetByName("XP Config");
+  if (!cfg) cfg = ss.insertSheet("XP Config");
+
+  cfg.getRange("A1").setValue("Test Score (0–4)");
+  cfg.getRange("B1").setValue("XP Awarded");
+
+  const rows = [
+    [0, 0],
+    [1, TEST_SCORE_XP[1] || 0],
+    [2, TEST_SCORE_XP[2] || 0],
+    [3, TEST_SCORE_XP[3] || 0],
+    [4, TEST_SCORE_XP[4] || 0],
+  ];
+  cfg.getRange(2, 1, rows.length, 2).setValues(rows);
+  cfg.autoResizeColumn(1);
+  cfg.autoResizeColumn(2);
+  return cfg;
+}
+
+// Seed global settings on XP Config sheet (if missing) and return the sheet
+function ensureConfigSettings_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let cfg = ss.getSheetByName("XP Config");
+  if (!cfg) cfg = ss.insertSheet("XP Config");
+
+  // Settings table header at D1:E1
+  cfg.getRange("D1").setValue("Setting");
+  cfg.getRange("E1").setValue("Value");
+  const settings = [
+    ["XP_CAP", DEFAULT_XP_CAP],
+    ["EXCHANGE_RATE", DEFAULT_EXCHANGE_RATE],
+    ["DAILY_QUIZ", DEFAULT_DAILY_WEIGHTS.quiz],
+    ["DAILY_FACULTY", DEFAULT_DAILY_WEIGHTS.faculty],
+    ["DAILY_EXIT_TICKET", DEFAULT_DAILY_WEIGHTS.exitTicket],
+    ["DAILY_WRITING", DEFAULT_DAILY_WEIGHTS.writing],
+    ["DAILY_KINDNESS", DEFAULT_DAILY_WEIGHTS.kindness],
+    ["DAILY_EXPECTATIONS", DEFAULT_DAILY_WEIGHTS.expectations],
+    ["DAILY_PARTICIPATION_EACH", DEFAULT_DAILY_WEIGHTS.participationEach],
+    ["BEHAVIOR_MINOR", DEFAULT_BEHAVIOR_PENALTIES.minor],
+    ["BEHAVIOR_WARNING", DEFAULT_BEHAVIOR_PENALTIES.warning],
+    ["BEHAVIOR_DISRUPT", DEFAULT_BEHAVIOR_PENALTIES.disrupt],
+    ["BEHAVIOR_REPEAT", DEFAULT_BEHAVIOR_PENALTIES.repeat],
+    ["BEHAVIOR_SERIOUS", DEFAULT_BEHAVIOR_PENALTIES.serious],
+    ["BEHAVIOR_SEVERE", DEFAULT_BEHAVIOR_PENALTIES.severe],
+  ];
+
+  // Build a map of existing settings
+  const lastRow = Math.max(2, cfg.getLastRow());
+  const existing = new Map();
+  if (lastRow >= 2) {
+    const rows = cfg.getRange(2, 4, lastRow - 1, 2).getValues(); // D2:E
+    rows.forEach(([k, v]) => {
+      if (k) existing.set(String(k), v);
+    });
+  }
+
+  // Write missing settings to next rows
+  let writeRows = [];
+  settings.forEach(([k, v]) => {
+    if (!existing.has(k)) writeRows.push([k, v]);
+  });
+  if (writeRows.length) {
+    const start = existing.size ? (2 + existing.size) : 2;
+    cfg.getRange(start, 4, writeRows.length, 2).setValues(writeRows);
+  }
+  return cfg;
+}
+
+// Read settings from XP Config; fall back to defaults if missing
+function getRuntimeConfig_() {
+  if (__CFG_CACHE) return __CFG_CACHE;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName("XP Config");
+  const out = {
+    XP_CAP: DEFAULT_XP_CAP,
+    EXCHANGE_RATE: DEFAULT_EXCHANGE_RATE,
+    DAILY_WEIGHTS: { ...DEFAULT_DAILY_WEIGHTS },
+    BEHAVIOR_PENALTIES: { ...DEFAULT_BEHAVIOR_PENALTIES }
+  };
+  if (!cfg) return out;
+  try {
+    const lastRow = cfg.getLastRow();
+    if (lastRow >= 2) {
+      const rows = cfg.getRange(2, 4, lastRow - 1, 2).getValues(); // D2:E
+      const map = new Map();
+      rows.forEach(([k, v]) => { if (k !== '' && k != null) map.set(String(k), v); });
+      const getNum = (k, d) => {
+        const v = map.has(k) ? Number(map.get(k)) : d;
+        return isFinite(v) ? v : d;
+      };
+      out.XP_CAP = getNum("XP_CAP", out.XP_CAP);
+      out.EXCHANGE_RATE = getNum("EXCHANGE_RATE", out.EXCHANGE_RATE);
+      out.DAILY_WEIGHTS.quiz = getNum("DAILY_QUIZ", out.DAILY_WEIGHTS.quiz);
+      out.DAILY_WEIGHTS.faculty = getNum("DAILY_FACULTY", out.DAILY_WEIGHTS.faculty);
+      out.DAILY_WEIGHTS.exitTicket = getNum("DAILY_EXIT_TICKET", out.DAILY_WEIGHTS.exitTicket);
+      out.DAILY_WEIGHTS.writing = getNum("DAILY_WRITING", out.DAILY_WEIGHTS.writing);
+      out.DAILY_WEIGHTS.kindness = getNum("DAILY_KINDNESS", out.DAILY_WEIGHTS.kindness);
+      out.DAILY_WEIGHTS.expectations = getNum("DAILY_EXPECTATIONS", out.DAILY_WEIGHTS.expectations);
+      out.DAILY_WEIGHTS.participationEach = getNum("DAILY_PARTICIPATION_EACH", out.DAILY_WEIGHTS.participationEach);
+      out.BEHAVIOR_PENALTIES.minor = getNum("BEHAVIOR_MINOR", out.BEHAVIOR_PENALTIES.minor);
+      out.BEHAVIOR_PENALTIES.warning = getNum("BEHAVIOR_WARNING", out.BEHAVIOR_PENALTIES.warning);
+      out.BEHAVIOR_PENALTIES.disrupt = getNum("BEHAVIOR_DISRUPT", out.BEHAVIOR_PENALTIES.disrupt);
+      out.BEHAVIOR_PENALTIES.repeat = getNum("BEHAVIOR_REPEAT", out.BEHAVIOR_PENALTIES.repeat);
+      out.BEHAVIOR_PENALTIES.serious = getNum("BEHAVIOR_SERIOUS", out.BEHAVIOR_PENALTIES.serious);
+      out.BEHAVIOR_PENALTIES.severe = getNum("BEHAVIOR_SEVERE", out.BEHAVIOR_PENALTIES.severe);
+    }
+  } catch (e) {}
+  __CFG_CACHE = out;
+  return __CFG_CACHE;
+}
+
+function clearConfigCache_() { __CFG_CACHE = null; }
+
+/*** RECOMPUTE PROGRESS ********************************************************
+ * Recalculates level-related derived fields (Title, CumXP already stored, Level,
+ * XP in Level, XP To Next, Sparkline formula, Progress %) for every student on
+ * the XP Tracker using current level thresholds & prestige titles. Useful after
+ * adjusting level thresholds or manually editing cumulative XP.
+ */
+function recomputeAllLevelsAndProgress() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tracker = ss.getSheetByName('XP Tracker');
+  if (!tracker) { SpreadsheetApp.getActive().toast('XP Tracker sheet missing'); return; }
+
+  const lastRow = tracker.getLastRow();
+  if (lastRow < 2) { SpreadsheetApp.getActive().toast('No student rows to recompute'); return; }
+
+  // Columns layout expectation (A:Name, B:Title, C:CumXP, D:Level, E:XPInLevel, F:XPToNext, G:Sparkline, H:Progress, I:Debt, J:Guild)
+  const num = lastRow - 1;
+  const names = tracker.getRange(2,1,num,1).getValues().map(r => (r[0]||'').toString().trim());
+  const cumXPs = tracker.getRange(2,3,num,1).getValues().map(r => Number(r[0])||0);
+
+  const out = Array.from({length:num}, () => new Array(8).fill('')); // B..I (skip A & J)
+
+  for (let i=0;i<num;i++) {
+    const name = names[i];
+    if (!name) continue; // leave blank row
+    const cumXP = cumXPs[i];
+    const level = getLevelFromXP(cumXP);
+    const baseXP = levelThresholds[level-1];
+    const currentLevelXP = cumXP - baseXP;
+    const xpToNext = getXPForLevel(level); // returns 0 at max level
+    const xpToNextDisplay = xpToNext === 0 ? 0 : Math.max(0, xpToNext - currentLevelXP);
+    const percentProgress = xpToNext === 0 ? 1 : (currentLevelXP / xpToNext);
+    const title = determineTitle(cumXP, level);
+    const rowNum = i + 2;
+    out[i][0] = title; // B
+    out[i][1] = cumXP; // C (reaffirm)
+    out[i][2] = level; // D
+    out[i][3] = currentLevelXP; // E
+    out[i][4] = xpToNextDisplay; // F
+    out[i][5] = `=SPARKLINE(H${rowNum}, {"charttype","bar";"max",1;"color1","green"})`; // G
+    out[i][6] = percentProgress; // H
+    // Debt left untouched (I) – keep existing value
+    const debt = tracker.getRange(rowNum,9).getValue();
+    out[i][7] = debt; // I
+  }
+
+  // Write back B..I
+  tracker.getRange(2,2,num,8).setValues(out);
+
+  // Trigger leaderboard rebuild regardless of signature (force by clearing stored sig)
+  try { PropertiesService.getDocumentProperties().deleteProperty('LB_SIG'); } catch (e) {}
+  updateLeaderboard();
+  SpreadsheetApp.getActive().toast('Progress recomputed for '+num+' rows.');
+}
+
+function setupTestScoreDropdown_() {
+  const daily = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Daily Checklist");
+  if (!daily) return;
+  ensureSheetSize_(daily, 26, 19);
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['0','1','2','3','4'], true)
+    .setAllowInvalid(false)
+    .build();
+  // Clear any leftover checkbox values like FALSE to avoid invalid markers
+  const testRange = daily.getRange("B2:B26");
+  testRange.clearDataValidations();
+  testRange.clearContent();
+  testRange.setDataValidation(rule)
+           .setNote("Select 0–4. XP per score is set on the 'XP Config' sheet.");
+}
+
+// Force EXCHANGE_RATE to 20 on 'XP Config' so currency uses 1 coin per 20 XP
+function enforceExchangeRate20_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let cfg = ss.getSheetByName('XP Config');
+  if (!cfg) cfg = ensureConfigSettings_();
+  const lastRow = cfg.getLastRow();
+  if (lastRow < 2) return;
+  const rng = cfg.getRange(2, 4, lastRow - 1, 2); // D2:E
+  const vals = rng.getValues();
+  let changed = false;
+  for (let i = 0; i < vals.length; i++) {
+    const key = (vals[i][0] || '').toString();
+    if (key === 'EXCHANGE_RATE') {
+      const cur = Number(vals[i][1]);
+      if (!isFinite(cur) || cur !== 20) { vals[i][1] = 20; changed = true; }
+      break;
+    }
+  }
+  if (changed) { rng.setValues(vals); clearConfigCache_(); }
+}
+
+/*** START HERE PAGE **********************************************************/
+function buildStartHerePage() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // Hard reset: delete existing sheet entirely so NO prior artifacts remain
+  const existing = ss.getSheetByName('Start Here');
+  if (existing) {
+    // Remove any protections
+    try {
+      const protections = existing.getProtections(SpreadsheetApp.ProtectionType.SHEET) || [];
+      protections.forEach(p => { try { p.remove(); } catch(e){} });
+    } catch(e){}
+    // Remove any named ranges referencing this sheet
+    try {
+      const named = ss.getNamedRanges();
+      named.forEach(nr => {
+        try {
+          const r = nr.getRange();
+          if (r && r.getSheet() && r.getSheet().getName() === 'Start Here') nr.remove();
+        } catch(e){}
+      });
+    } catch(e){}
+    try { ss.deleteSheet(existing); } catch (e) {}
+  }
+  const sh = ss.insertSheet('Start Here');
+  ensureSheetSize_(sh, 140, 9);
+  sh.setHiddenGridlines(true);
+  sh.setColumnWidths(1,9,140);
+
+  // Pastel palette rotation
+  const pastel = ['#FFE6E6','#E3F2FD','#E8F5E9','#FFF8E1','#EDE7F6','#E0F7FA','#FFF3E0','#F3E5F5'];
+  const headerText = '#37474F';
+  const bodyText = '#4E342E';
+
+  // Title
+  sh.getRange('A1:I1').merge().setValue('✨ START HERE — Classroom XP & Coins Guide ✨')
+    .setFontSize(30).setFontWeight('bold')
+    .setFontFamily(FANTASY_FONT+", "+NAME_FONT_FALLBACK)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#FFEFD5').setFontColor('#5D4037');
+  sh.setRowHeight(1,70);
+
+  // Note about simplicity / no calendar dependency
+  sh.getRange('A2:I2').merge().setValue('This system gamifies class routines with XP, Levels, Titles, and Coins. No extra setup, no calendar needed.')
+    .setFontSize(14).setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#FFFDE7').setFontColor('#5D4037').setWrap(true);
+  sh.setRowHeight(2,50);
+
+  const SECTIONS = [
+    {h:'🎯 Goal', lines:[
+      'Make everyday effort feel like progress in a friendly “adventure game.”',
+      'Students see growth (levels & titles) and earn Coins for rewards.'
+    ]},
+    {h:'🧩 Core Pieces', lines:[
+      'XP Tracker: master list (names, levels, XP, debt, guild).',
+      'Daily Checklist: check positives (quiz, kindness, participation, etc.).',
+      'Behavior Tracker: mark missteps (creates temporary XP debt).',
+      'Currency: view & spend Coins.',
+      'Leaderboard: fun visual ranking + streak badges.',
+      'XP Log & Comments: automatic history (hands off).'
+    ]},
+    {h:'🚀 Daily Flow (≈5 min)', lines:[
+      '1. Teach normally.',
+      '2. Tick Daily Checklist boxes for each student.',
+      '3. Record any behavior issues (if none, skip).',
+      '4. End of class: XP Tools → Process Daily XP.',
+      '5. (Optional) Open Leaderboard to celebrate progress.'
+    ]},
+    {h:'💡 XP Sources (Defaults)', lines:[
+      'Quiz +10 | Faculty +5 | Exit Ticket +5 | Writing +5 | Kindness +5 | Expectations +10',
+      'Participation: 5 mini checks (each +2).',
+      'Bonus checkboxes: you set values in row headers.',
+      'Test score 0–4 → XP via XP Config mapping.'
+    ]},
+    {h:'⚖️ Behavior & Debt', lines:[
+      'Negative behaviors add “XP debt.”',
+      'Future earned XP first pays off debt, then advances level.',
+      'Keeps consequences temporary—not permanent loss.'
+    ]},
+    {h:'🪙 Coins (Rewards Store)', lines:[
+      '≈1 Coin per 20 applied XP (automatic).',
+      'Spend Coins via Currency sheet or Spend Coins dialog.',
+      'You define rewards (seating perk, sticker, reading time…).'
+    ]},
+    {h:'🛡️ Guilds (Optional Teams)', lines:[
+      'Assign a guild in XP Tracker (dropdown).',
+      'Use for friendly competition or cooperative goals.'
+    ]},
+    {h:'🔥 Participation Streaks', lines:[
+      'Earn ≥3 participation mini checks in a day = streak day.',
+      '5 days 🔥 | 10 💥 | 15 💎 | 20 🏆 (shows on Leaderboard).'
+    ]},
+    {h:'🛠 First-Time Setup', lines:[
+      '1. Enter student names (XP Tracker column A).',
+      '2. (Optional) Assign each a Guild.',
+      '3. Start using Daily Checklist & Behavior Tracker today.',
+      '4. End of class: run Process Daily XP.',
+      '5. Show the Leaderboard—cheer level ups!'
+    ]},
+    {h:'📋 Menu (XP Tools)', lines:[
+  'Process Daily XP: apply today\'s checklist + behavior & update XP/coins.',
+  'Recompute Progress: recalc level progress bars after XP rule/threshold edits.',
+  'Refresh Config: reapply formulas/layout if something looks off.',
+  'Spend Coins (Shop): deduct coins for rewards you grant.',
+  'Open Start Here: reopen this guide anytime.',
+  'Reset All Data: FULL wipe & rebuild — only at a new term.'
+    ]},
+    {h:'🧪 Tips for Success', lines:[
+      'Praise the effort behind level ups.',
+      'Let students suggest new reward ideas.',
+      'Adjust bonus values for special theme days.',
+      'Use streak badges to recognize consistency.'
+    ]},
+    {h:'🛑 Safety & Reset', lines:[
+      'Reset All Data: ONLY for new term (cannot undo).',
+      'XP Config: tweak point values carefully.',
+      'Make an occasional copy of the sheet as backup.'
+    ]},
+    {h:'🎉 You\'re Ready', lines:[
+      'Keep it simple at first—mark a few items.',
+      'Process Daily XP. Show progress. Celebrate.',
+      'Expand gradually. Have fun with it!'
+    ]}
+  ];
+
+  let row = 4;
+  SECTIONS.forEach((sec, idx) => {
+    const color = pastel[idx % pastel.length];
+    const header = sh.getRange(row,1,1,9).merge();
+    header.setValue(sec.h)
+      .setFontWeight('bold').setFontSize(18)
+      .setBackground(color).setFontColor(headerText)
+      .setHorizontalAlignment('left').setVerticalAlignment('middle')
+      .setWrap(true);
+    sh.setRowHeight(row, 34);
+    row++;
+    sec.lines.forEach(line => {
+      const r = sh.getRange(row,1,1,9).merge();
+      r.setValue('• '+line)
+        .setFontSize(12)
+        .setFontFamily('Arial')
+        .setBackground('#FFFFFF')
+        .setFontColor(bodyText)
+        .setWrap(true);
+      sh.setRowHeight(row, 24);
+      row++;
+    });
+    row++; // spacer
+  });
+
+  const footerRow = row + 1;
+  sh.getRange(footerRow,1,1,9).merge().setValue('Made for teachers — minimal clicks, maximum encouragement ✨')
+    .setHorizontalAlignment('center').setFontStyle('italic')
+    .setFontColor('#546E7A').setBackground('#E0F2F1');
+  sh.activate();
+}
+

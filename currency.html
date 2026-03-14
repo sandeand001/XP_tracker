@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🪙 Currency — Classroom XP Tracker</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header id="app-header">
+    <h1>🪄 Classroom XP Tracker 🪄</h1>
+    <span id="sync-status" class="sync-status"></span>
+    <nav id="main-nav">
+      <a href="index.html" class="nav-btn">Home</a>
+      <a href="tracker.html" class="nav-btn">XP Tracker</a>
+      <a href="daily.html" class="nav-btn">Daily Checklist</a>
+      <a href="behavior.html" class="nav-btn">Behavior</a>
+      <a href="leaderboard.html" class="nav-btn">Leaderboard</a>
+      <a href="currency.html" class="nav-btn active">Currency</a>
+      <a href="log.html" class="nav-btn">XP Log</a>
+      <a href="settings.html" class="nav-btn">Settings</a>
+    </nav>
+  </header>
+
+  <main id="app-main">
+    <section id="tab-currency" class="page-content" data-page="currency">
+      <div class="tab-header"><h2>🪙 Currency & Shop</h2></div>
+      <table id="currency-table">
+        <thead>
+          <tr><th>Name</th><th>Total Earned</th><th>Total Spent</th><th>Balance</th><th>Spend</th></tr>
+        </thead>
+        <tbody id="currency-body"></tbody>
+      </table>
+      <h3 style="margin-top:1.5rem">Recent Transactions</h3>
+      <div class="table-wrap">
+        <table id="spend-log-table">
+          <thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Note</th></tr></thead>
+          <tbody id="spend-log-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="js/page-turn.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

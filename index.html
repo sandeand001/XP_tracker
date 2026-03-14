@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>✨ Classroom XP Tracker</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/landing.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="landing-body">
+  <canvas id="starfield"></canvas>
+
+  <header id="app-header">
+    <h1><span class="title-rune">⟡</span> Classroom XP Tracker <span class="title-rune">⟡</span></h1>
+    <span id="sync-status" class="sync-status"></span>
+    <nav id="main-nav">
+      <a href="index.html" class="nav-btn active"><span class="nav-sigil">✦</span><span class="nav-label">Home</span></a>
+      <a href="tracker.html" class="nav-btn"><span class="nav-sigil">📊</span><span class="nav-label">Tracker</span></a>
+      <a href="daily.html" class="nav-btn"><span class="nav-sigil">✅</span><span class="nav-label">Daily</span></a>
+      <a href="behavior.html" class="nav-btn"><span class="nav-sigil">⚖️</span><span class="nav-label">Behavior</span></a>
+      <a href="leaderboard.html" class="nav-btn"><span class="nav-sigil">🏆</span><span class="nav-label">Board</span></a>
+      <a href="currency.html" class="nav-btn"><span class="nav-sigil">🪙</span><span class="nav-label">Currency</span></a>
+      <a href="log.html" class="nav-btn"><span class="nav-sigil">📜</span><span class="nav-label">Log</span></a>
+      <a href="settings.html" class="nav-btn"><span class="nav-sigil">⚙️</span><span class="nav-label">Settings</span></a>
+    </nav>
+  </header>
+
+  <main id="app-main" class="landing-main">
+    <section class="page-content" data-page="home">
+      <div class="flow">
+
+        <!-- ═══ HERO ═══ -->
+        <div class="hero fade-section">
+          <svg viewBox="0 0 100 100" class="hero-shield">
+            <polygon points="50,5 95,30 95,75 50,95 5,75 5,30" fill="none" stroke="url(#shieldGrad)" stroke-width="2"/>
+            <defs><linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#FFD700"/>
+              <stop offset="100%" stop-color="#B8860B"/>
+            </linearGradient></defs>
+            <text x="50" y="58" text-anchor="middle" font-size="32" fill="#FFD700">⚔</text>
+          </svg>
+          <h2 class="hero-title">
+            <span class="hero-line">Turn Every Lesson</span>
+            <span class="hero-line accent">Into an Adventure</span>
+          </h2>
+          <p class="hero-sub">An RPG-inspired system that transforms daily effort into XP, levels, titles, and rewards — built for real classrooms, powered by a little bit of magic.</p>
+          <a href="tracker.html" class="btn-quest"><span class="btn-icon">⚡</span> Begin Your Quest</a>
+        </div>
+
+        <!-- stats as an inline sentence -->
+        <p class="stats-sentence fade-section">
+          <span class="glow-word">10 Levels</span> to conquer · 
+          <span class="glow-word">17 Titles</span> to unlock · 
+          <span class="glow-word">∞ Coins</span> to earn · 
+          <span class="glow-word">~5 min</span> daily
+        </p>
+
+        <div class="divider fade-section">✦ ✦ ✦</div>
+
+        <!-- ═══ THE DAILY RITUAL ═══ -->
+        <h2 class="section-heading fade-section"><span class="heading-marker">Chapter I</span>The Daily Ritual</h2>
+        <p class="section-sub fade-section">A simple loop — less than five minutes.</p>
+
+        <div class="step fade-section">
+          <span class="step-num" style="color:#7c4dff">1</span>
+          <div><strong>Teach as Normal</strong> — No extra prep. Just run your class.</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#2979ff">2</span>
+          <div><strong>Tick the Checklist</strong> — Open <a href="daily.html">Daily Checklist</a>. Mark quiz, participation, kindness.</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#ff5252">3</span>
+          <div><strong>Log Any Behavior</strong> — Issues? Record on <a href="behavior.html">Behavior</a>. None? Skip it.</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#00c853">4</span>
+          <div><strong>Process XP ✨</strong> — Hit <em>Process Daily XP</em> on the <a href="tracker.html">Tracker</a>. Done.</div>
+        </div>
+
+        <div class="divider fade-section">✦ ✦ ✦</div>
+
+        <!-- ═══ YOUR TOOLKIT ═══ -->
+        <h2 class="section-heading fade-section"><span class="heading-marker">Chapter II</span>Your Toolkit</h2>
+        <p class="section-sub fade-section">Six enchanted instruments at your command.</p>
+
+        <a href="tracker.html" class="tool-row fade-section">
+          <span class="tool-icon">📊</span>
+          <span class="tool-name">XP Tracker</span>
+          <span class="tool-desc">Master roster — names, levels, XP, debt, guilds.</span>
+        </a>
+        <a href="daily.html" class="tool-row fade-section">
+          <span class="tool-icon">✅</span>
+          <span class="tool-name">Daily Checklist</span>
+          <span class="tool-desc">Quick check-boxes for quiz, kindness, participation.</span>
+        </a>
+        <a href="behavior.html" class="tool-row fade-section">
+          <span class="tool-icon">⚖️</span>
+          <span class="tool-name">Behavior Tracker</span>
+          <span class="tool-desc">Temporary XP debt. Consequences without permanent loss.</span>
+        </a>
+        <a href="leaderboard.html" class="tool-row fade-section">
+          <span class="tool-icon">🏆</span>
+          <span class="tool-name">Leaderboard</span>
+          <span class="tool-desc">Rankings, streak badges, guild totals. Project it!</span>
+        </a>
+        <a href="currency.html" class="tool-row fade-section">
+          <span class="tool-icon">🪙</span>
+          <span class="tool-name">Currency Shop</span>
+          <span class="tool-desc">~1 coin per 20 XP. Spend on rewards you define.</span>
+        </a>
+        <a href="log.html" class="tool-row fade-section">
+          <span class="tool-icon">📜</span>
+          <span class="tool-name">XP Log</span>
+          <span class="tool-desc">Automatic history. Fully hands-off.</span>
+        </a>
+
+        <div class="divider fade-section">✦ ✦ ✦</div>
+
+        <!-- ═══ GAME MECHANICS ═══ -->
+        <h2 class="section-heading fade-section"><span class="heading-marker">Chapter III</span>Game Mechanics</h2>
+        <p class="section-sub fade-section">The arcane systems behind the scenes.</p>
+
+        <div class="mechanic fade-section">
+          <h3 class="mechanic-title">⚡ XP Sources</h3>
+          <p class="mechanic-tags">
+            Quiz +10 · Expectations +10 · Faculty +5 · Exit Ticket +5 · Writing +5 · Kindness +5
+          </p>
+          <p class="mechanic-body">Plus 5 participation mini-checks (+2 each), custom bonuses, and test-score mapping.</p>
+        </div>
+
+        <div class="mechanic fade-section">
+          <h3 class="mechanic-title">🛡️ Guilds</h3>
+          <p class="mechanic-body">
+            <span style="color:#1e88e5">⚔ Blue</span> · 
+            <span style="color:#fbc02d">⚔ Gold</span> · 
+            <span style="color:#8e24aa">⚔ Purple</span> — 
+            Teams for friendly competition or cooperative goals.
+          </p>
+        </div>
+
+        <div class="mechanic fade-section">
+          <h3 class="mechanic-title">🔥 Streaks</h3>
+          <p class="mechanic-body">
+            🔥 5 days · 💥 10 days · 💎 15 days · 🏆 20 days<br>
+            ≥3 participation checks per day keeps the streak alive.
+          </p>
+        </div>
+
+        <div class="mechanic fade-section">
+          <h3 class="mechanic-title">⚖️ The Debt System</h3>
+          <p class="mechanic-body">
+            <span style="color:#69f0ae">+XP Earned</span> → 
+            <span style="color:#ff8a80">Pays Debt</span> → 
+            <span style="color:#b388ff">Levels Up</span><br>
+            Debt is temporary. Future XP pays it off first, then advances.
+          </p>
+        </div>
+
+        <div class="divider fade-section">✦ ✦ ✦</div>
+
+        <!-- ═══ GETTING STARTED ═══ -->
+        <h2 class="section-heading fade-section"><span class="heading-marker">Chapter IV</span>Begin Your Journey</h2>
+        <p class="section-sub fade-section">Up and running in two minutes.</p>
+
+        <div class="step fade-section">
+          <span class="step-num" style="color:#7c4dff">👤</span>
+          <div><strong>Summon Your Adventurers</strong> — Enter student names on the <a href="tracker.html">XP Tracker</a>.</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#2979ff">🛡️</span>
+          <div><strong>Form the Guilds</strong> — Assign each student to a guild (optional but fun).</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#ff5252">✅</span>
+          <div><strong>Track Your First Day</strong> — Use the Daily Checklist. Process XP at end of class.</div>
+        </div>
+        <div class="step fade-section">
+          <span class="step-num" style="color:#00c853">🎉</span>
+          <div><strong>Celebrate!</strong> — Show the Leaderboard. Cheer level-ups. The adventure begins!</div>
+        </div>
+
+        <div class="divider fade-section">✦ ✦ ✦</div>
+
+        <!-- ═══ TIPS ═══ -->
+        <h3 class="tips-heading fade-section">📜 Wisdom from the Elders</h3>
+        <p class="tip fade-section">✦ Praise the <em>effort</em> behind level-ups, not just the level.</p>
+        <p class="tip fade-section">✦ Let students suggest new reward ideas for the shop.</p>
+        <p class="tip fade-section">✦ Adjust bonus values for special theme days or events.</p>
+        <p class="tip fade-section">✦ Use <a href="settings.html">Settings</a> to export backups regularly.</p>
+        <p class="tip fade-section">✦ Start simple — expand gradually.</p>
+
+        <div class="divider fade-section">✦</div>
+
+        <!-- ═══ CTA ═══ -->
+        <h2 class="cta-title fade-section">Your Adventure Awaits</h2>
+        <p class="cta-sub fade-section">Mark a few items. Process XP. Show progress. Celebrate.</p>
+        <div class="cta-btn-wrap fade-section">
+          <a href="tracker.html" class="btn-quest btn-quest--lg"><span class="btn-icon">⚡</span> Launch XP Tracker</a>
+        </div>
+
+        <p class="credit fade-section">Made for teachers — minimal clicks, maximum encouragement ✨</p>
+
+      </div>
+    </section>
+  </main>
+
+  <div id="toast-container"></div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="js/page-turn.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+  <script src="js/landing.js" defer></script>
+</body>
+</html>
