@@ -62,7 +62,7 @@ export function renderTracker() {
     tr.innerHTML = `
       <td><strong>${esc(s.name)}</strong></td>
       <td>${esc(s.title || '')}</td>
-      <td class="text-center">${Engine.getTitleBadge(s.title)} ${s.level || 1}</td>
+      <td class="text-center">${s.level || 1}</td>
       <td class="text-center">${s.xpInLevel || 0}</td>
       <td class="text-center">${s.xpToNext || 0}</td>
       <td>
@@ -391,30 +391,69 @@ export function renderLeaderboard() {
     guildEl.style.display = 'none';
   }
 
-  // Entries
+  // Entries — top 3 get extravagant podium treatment
   for (const e of entries) {
     const pct = Math.round((e.progress || 0) * 100);
     const rankEmoji = getRankBadge(e.rank);
     const guildColor = guildColorMap[e.guild] || '';
     const nameStyle = guildColor ? `color:${guildColor}` : '';
     const guildDot = guildColor ? `<span class="guild-dot" style="background:${guildColor};width:10px;height:10px;vertical-align:middle;display:inline-block;margin-right:4px"></span>` : '';
+    const titleBadge = e.badge || '';
+    const isPodium = e.rank <= 3;
+    const ordinal = e.rank === 1 ? '1st' : e.rank === 2 ? '2nd' : e.rank === 3 ? '3rd' : '';
 
     const div = document.createElement('div');
-    div.className = 'lb-entry';
-    div.innerHTML = `
-      <div class="lb-rank ${e.rank <= 3 ? 'lb-rank-' + e.rank : ''}">${rankEmoji} ${e.rank}</div>
-      <div class="lb-name" style="${nameStyle}">${guildDot}${esc(e.name)}${e.streak.badge ? `<span class="lb-streak-badge" title="${e.streak.count} day streak">${e.streak.badge}</span>` : ''}</div>
-      <div class="lb-title">✧ ${esc(e.title || '')} ✧</div>
-      <div class="lb-level">${e.badge || ''} Lv.${e.level}</div>
-      <div class="lb-bar">
-        <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width:${pct}%"></div>
-          <span class="progress-bar-text">${pct}%</span>
+    div.className = `lb-entry${isPodium ? ' lb-podium lb-podium-' + e.rank : ''}`;
+
+    if (isPodium) {
+      // Extravagant podium card with frame
+      const frameFile = e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : 'bronze';
+      div.innerHTML = `
+        <img class="lb-frame" src="Assets/Frames/${frameFile}.png" alt="" draggable="false">
+        <div class="lb-podium-content">
+          <div class="lb-podium-line">
+            <span class="lb-podium-rank">#${e.rank}</span>
+            <span class="lb-podium-name" style="${nameStyle}">${guildDot}${esc(e.name)}${e.streak.badge ? `<span class="lb-streak-badge" title="${e.streak.count} day streak">${e.streak.badge}</span>` : ''}</span>
+            <span class="lb-podium-sep">·</span>
+            <span class="lb-podium-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')} <span class="lb-title-sigil">${titleBadge}</span></span>
+          </div>
+          <div class="lb-podium-line">
+            <span class="lb-podium-level">Lv. ${e.level}</span>
+            <span class="lb-podium-sep">·</span>
+            <span class="lb-podium-xp">${(e.cumXP || 0).toLocaleString()} XP</span>
+            <span class="lb-podium-sep">·</span>
+            <div class="lb-podium-bar">
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width:${pct}%"></div>
+                <span class="progress-bar-text">${pct}%</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="lb-xp-next">${e.xpToNext || 0} to next</div>
-      <div class="lb-total-xp">${(e.cumXP || 0).toLocaleString()} XP</div>
-    `;
+      `;
+    } else {
+      // Standard entry
+      div.innerHTML = `
+        <div class="lb-rank">
+          <span class="lb-rank-num">#${e.rank}</span>
+        </div>
+        <div class="lb-identity">
+          <div class="lb-name" style="${nameStyle}">${guildDot}${esc(e.name)}${e.streak.badge ? `<span class="lb-streak-badge" title="${e.streak.count} day streak">${e.streak.badge}</span>` : ''}</div>
+          <div class="lb-title"><span class="lb-title-sigil">${titleBadge}</span> ${esc(e.title || 'Unranked')} <span class="lb-title-sigil">${titleBadge}</span></div>
+        </div>
+        <div class="lb-stats">
+          <div class="lb-level">Lv. ${e.level}</div>
+          <div class="lb-bar">
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" style="width:${pct}%"></div>
+              <span class="progress-bar-text">${pct}%</span>
+            </div>
+          </div>
+          <div class="lb-xp-next">${e.xpToNext || 0} to next</div>
+        </div>
+        <div class="lb-total-xp">${(e.cumXP || 0).toLocaleString()} XP</div>
+      `;
+    }
     container.appendChild(div);
   }
 }

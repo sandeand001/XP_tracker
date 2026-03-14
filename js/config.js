@@ -32,25 +32,25 @@ export const BASE_TITLES = {
   10: "Master Spellcaster"
 };
 
-// Title badge emoji map
+// Title badge — vivid fantasy sigils
 export const TITLE_BADGES = {
-  'Sparkling Novice': '🌱',
-  'Rune Reader': '📜',
-  'Potion Apprentice': '🧪',
-  'Spell Slinger': '🎆',
+  'Sparkling Novice': '💫',
+  'Rune Reader': '🔮',
+  'Potion Apprentice': '⚗️',
+  'Spell Slinger': '🌀',
   'Wand Wielder': '🪄',
-  'Magic Adept': '✨',
-  'Enchanted Knight': '🛡️',
-  'Arcane Scholar': '📘',
-  'Mystic Champion': '🏅',
-  'Master Spellcaster': '🌟',
-  'Sunmere Guardian': '☀️',
-  'Keeper of the Archives': '🏛️',
+  'Magic Adept': '🔥',
+  'Enchanted Knight': '⚔️',
+  'Arcane Scholar': '🌙',
+  'Mystic Champion': '🐉',
+  'Master Spellcaster': '👑',
+  'Sunmere Guardian': '🦅',
+  'Keeper of the Archives': '🗝️',
   'Chronomancer Adept': '⏳',
   'Eclipse Warden': '🌑',
-  'Arcane Vanguard': '⚔️',
-  'Paragon of Realms': '👑',
-  'Ascendant Archmage': '🔮'
+  'Arcane Vanguard': '🛡️',
+  'Paragon of Realms': '🏰',
+  'Ascendant Archmage': '⭐'
 };
 
 // Guilds
@@ -95,8 +95,8 @@ export function getStreakBadge(count) {
 
 // Rank badges
 export function getRankBadge(rank) {
-  if (rank === 1) return '🏆';
-  if (rank === 2) return '🥈';
-  if (rank === 3) return '🥉';
+  if (rank === 1) return '👑';
+  if (rank === 2) return '⚔️';
+  if (rank === 3) return '🛡️';
   return '';
 }

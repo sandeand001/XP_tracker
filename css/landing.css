@@ -1,32 +1,28 @@
 /* ═══════════════════════════════════════════
-   LANDING PAGE — Flowing single-column
+   LANDING / HOME PAGE — Flowing single-column
    No boxes, no grids, no cards.
+   Dark cosmic styles shared across all pages.
    ═══════════════════════════════════════════ */
 
-/* ── Page ─────────────────────────────────── */
+/* ── Page (always active) ─────────────────── */
 .landing-body {
   background: #0b0818;
   color: #d8cff0;
   overflow-x: hidden;
 }
-/* Match html bg to dark theme so no white flash between pages */
-html:has(.landing-body) {
-  background: #0b0818;
-}
-.landing-body #app-header {
+
+/* ── Home-page-only header: transparent + static ── */
+#app-header.home-header {
   background: transparent;
   backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: none;
   box-shadow: none;
   position: static;
   top: auto;
-  z-index: 100;
   padding: 32px 24px 0;
-  text-align: center;
 }
-.landing-body #app-header h1 {
-  color: rgba(224, 214, 255, 0.5);
-  font-family: 'Cinzel Decorative', serif;
+#app-header.home-header h1 {
   font-size: clamp(0.7rem, 1.8vw, 0.88rem);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -34,19 +30,19 @@ html:has(.landing-body) {
   margin-bottom: 14px;
   font-weight: 400;
 }
-.landing-body .title-rune {
+.title-rune {
   color: rgba(124,77,255,0.4);
   font-size: 0.7em;
   vertical-align: 1px;
 }
-.landing-body #main-nav {
+#main-nav {
   justify-content: center;
   align-items: stretch;
   gap: 6px;
   flex-wrap: wrap;
   padding-bottom: 8px;
 }
-.landing-body .nav-btn {
+.nav-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -65,36 +61,36 @@ html:has(.landing-body) {
   transition: color 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.25s;
   position: relative;
 }
-.landing-body .nav-sigil {
+.nav-sigil {
   font-size: 1.25rem;
   display: block;
   filter: grayscale(0.6) brightness(0.7);
   transition: filter 0.3s, transform 0.3s;
 }
-.landing-body .nav-label {
+.nav-label {
   display: block;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.58rem;
 }
-.landing-body .nav-btn:hover {
+.nav-btn:hover {
   color: #d8ceff;
   background: rgba(124,77,255,0.06);
   border-color: rgba(124,77,255,0.25);
   box-shadow: 0 0 16px rgba(124,77,255,0.12);
   transform: translateY(-2px);
 }
-.landing-body .nav-btn:hover .nav-sigil {
+.nav-btn:hover .nav-sigil {
   filter: grayscale(0) brightness(1);
   transform: scale(1.1);
 }
-.landing-body .nav-btn.active {
+.nav-btn.active {
   color: #e8e0ff;
   background: rgba(124,77,255,0.1);
   border-color: rgba(124,77,255,0.35);
   box-shadow: 0 0 20px rgba(124,77,255,0.18), inset 0 0 12px rgba(124,77,255,0.06);
 }
-.landing-body .nav-btn.active .nav-sigil {
+.nav-btn.active .nav-sigil {
   filter: grayscale(0) brightness(1.15);
 }
 

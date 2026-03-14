@@ -6,14 +6,19 @@
   <title>✨ Classroom XP Tracker</title>
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/landing.css" />
+  <link rel="stylesheet" href="css/themes.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    // Apply saved theme + layout ASAP to prevent flash
+    (function(){var d=document.documentElement;d.setAttribute('data-theme',localStorage.getItem('xp_theme')||'celestial-void');d.setAttribute('data-layout',localStorage.getItem('xp_layout')||'arcane-grid')})();
+  </script>
 </head>
 <body class="landing-body">
   <canvas id="starfield"></canvas>
 
-  <header id="app-header">
+  <header id="app-header" class="home-header">
     <h1><span class="title-rune">⟡</span> Classroom XP Tracker <span class="title-rune">⟡</span></h1>
     <span id="sync-status" class="sync-status"></span>
     <nav id="main-nav">
@@ -205,6 +210,68 @@
     <!-- ═══════════ SETTINGS ═══════════ -->
     <section id="tab-settings" class="page-content" data-page="settings">
       <div class="tab-header"><h2>⚙️ Settings & Data</h2></div>
+
+      <!-- Theme Selector -->
+      <div class="settings-card" style="margin-bottom:1.5rem">
+        <h3>🎨 Realm Theme</h3>
+        <p class="help-text">Choose your realm's color palette and atmosphere. Each theme has its own animated background.</p>
+        <div class="theme-picker-grid" id="theme-picker">
+          <div class="theme-card active" data-theme="celestial-void">
+            <span class="theme-card-icon">🌌</span>
+            <span class="theme-card-name">Celestial Void</span>
+            <span class="theme-card-subtitle">Cosmic Purple</span>
+          </div>
+          <div class="theme-card" data-theme="ancient-parchment">
+            <span class="theme-card-icon">🏰</span>
+            <span class="theme-card-name">Ancient Parchment</span>
+            <span class="theme-card-subtitle">Aged Sepia</span>
+          </div>
+          <div class="theme-card" data-theme="enchanted-forest">
+            <span class="theme-card-icon">🌲</span>
+            <span class="theme-card-name">Enchanted Forest</span>
+            <span class="theme-card-subtitle">Druidic Emerald</span>
+          </div>
+          <div class="theme-card" data-theme="dragons-ember">
+            <span class="theme-card-icon">🐉</span>
+            <span class="theme-card-name">Dragon's Ember</span>
+            <span class="theme-card-subtitle">Volcanic Crimson</span>
+          </div>
+          <div class="theme-card" data-theme="frozen-depths">
+            <span class="theme-card-icon">🌊</span>
+            <span class="theme-card-name">Frozen Depths</span>
+            <span class="theme-card-subtitle">Glacial Blue</span>
+          </div>
+          <div class="theme-card" data-theme="sunmere-academy">
+            <span class="theme-card-icon">🏫</span>
+            <span class="theme-card-name">Sunmere Academy</span>
+            <span class="theme-card-subtitle">Golden Scholarly</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layout Selector -->
+      <div class="settings-card" style="margin-bottom:1.5rem">
+        <h3>🏛️ Layout Style</h3>
+        <p class="help-text">Choose how content is arranged. Mix and match with any color theme.</p>
+        <div class="theme-picker-grid" id="layout-picker">
+          <div class="layout-card active" data-layout="arcane-grid">
+            <span class="theme-card-icon">⚔️</span>
+            <span class="layout-card-name">Arcane Grid</span>
+            <span class="theme-card-subtitle">Glass Cards</span>
+          </div>
+          <div class="layout-card" data-layout="ancient-scroll">
+            <span class="theme-card-icon">📜</span>
+            <span class="layout-card-name">Ancient Scroll</span>
+            <span class="theme-card-subtitle">Single Column</span>
+          </div>
+          <div class="layout-card" data-layout="grand-hall">
+            <span class="theme-card-icon">🏛️</span>
+            <span class="layout-card-name">Grand Hall</span>
+            <span class="theme-card-subtitle">Spacious &amp; Ornate</span>
+          </div>
+        </div>
+      </div>
+
       <div class="settings-grid">
         <div class="settings-card">
           <h3>📐 XP Configuration</h3>

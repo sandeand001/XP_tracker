@@ -11,6 +11,8 @@ const KEYS = {
   DAILY_STATE: 'xp_daily_state',
   BEHAVIOR_STATE: 'xp_behavior_state',
   COMMENTS: 'xp_comments',
+  THEME: 'xp_theme',
+  LAYOUT: 'xp_layout',
 };
 
 // ── Generic helpers ──
@@ -90,6 +92,26 @@ export function getConfig() {
   return load(KEYS.CONFIG, { ...DEFAULT_CONFIG });
 }
 export function saveConfig(cfg) { save(KEYS.CONFIG, cfg); }
+
+// ── Theme ──
+export function getTheme() {
+  return localStorage.getItem(KEYS.THEME) || 'celestial-void';
+}
+export function saveTheme(themeId) {
+  localStorage.setItem(KEYS.THEME, themeId);
+  pushToCloud(KEYS.THEME, themeId);
+  showSyncing();
+}
+
+// ── Layout ──
+export function getLayout() {
+  return localStorage.getItem(KEYS.LAYOUT) || 'arcane-grid';
+}
+export function saveLayout(layoutId) {
+  localStorage.setItem(KEYS.LAYOUT, layoutId);
+  pushToCloud(KEYS.LAYOUT, layoutId);
+  showSyncing();
+}
 
 // Lazy import workaround since this is a module
 function require_config() {

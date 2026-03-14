@@ -8,6 +8,54 @@ import * as UI from './ui.js';
 import { GUILDS } from './config.js';
 import { initFirebase, pullFromCloud, listenForChanges } from './firebase-sync.js';
 
+// ── Theme System ──
+function applyTheme(themeId) {
+  document.documentElement.setAttribute('data-theme', themeId);
+  window.dispatchEvent(new CustomEvent('theme:changed', { detail: { theme: themeId } }));
+  document.querySelectorAll('.theme-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.theme === themeId);
+  });
+}
+
+function applyLayout(layoutId) {
+  document.documentElement.setAttribute('data-layout', layoutId);
+  document.querySelectorAll('.layout-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.layout === layoutId);
+  });
+}
+
+function initThemePicker() {
+  // Apply saved theme + layout immediately
+  applyTheme(Store.getTheme());
+  applyLayout(Store.getLayout());
+
+  // Theme card clicks
+  const picker = document.getElementById('theme-picker');
+  if (picker) {
+    picker.addEventListener('click', (e) => {
+      const card = e.target.closest('.theme-card');
+      if (!card) return;
+      const themeId = card.dataset.theme;
+      applyTheme(themeId);
+      Store.saveTheme(themeId);
+      UI.toast(`Theme: ${card.querySelector('.theme-card-name').textContent}`, 'success');
+    });
+  }
+
+  // Layout card clicks
+  const layoutPicker = document.getElementById('layout-picker');
+  if (layoutPicker) {
+    layoutPicker.addEventListener('click', (e) => {
+      const card = e.target.closest('.layout-card');
+      if (!card) return;
+      const layoutId = card.dataset.layout;
+      applyLayout(layoutId);
+      Store.saveLayout(layoutId);
+      UI.toast(`Layout: ${card.querySelector('.layout-card-name').textContent}`, 'success');
+    });
+  }
+}
+
 // ── Detect current page from active section ──
 function getCurrentPage() {
   const section = document.querySelector('.page-content.active[data-page]');
@@ -37,16 +85,11 @@ function navigateTo(page) {
     }
   });
 
-  // Toggle landing-body class for dark cosmic theme vs parchment
-  const isHome = (page === 'home');
-  document.body.classList.toggle('landing-body', isHome);
-  document.getElementById('app-main').classList.toggle('landing-main', isHome);
+  // Toggle home-header class for transparent header on home page
+  const header = document.getElementById('app-header');
+  if (header) header.classList.toggle('home-header', page === 'home');
 
-  // Show/hide starfield canvas
-  const starfield = document.getElementById('starfield');
-  if (starfield) starfield.style.display = isHome ? '' : 'none';
-
-  // Tell landing.js to start/stop
+  // Dispatch page change event (starfield stays running on all pages)
   window.dispatchEvent(new CustomEvent('spa:pageChanged', { detail: { page } }));
 
   // Update URL hash (without triggering hashchange navigation)
@@ -359,6 +402,9 @@ async function init() {
   if (!cfg.DAILY_WEIGHTS) Store.saveConfig(Store.getConfig());
 
   initModal();
+
+  // Apply theme ASAP
+  initThemePicker();
 
   // Initialize ALL page event handlers upfront (they all exist in the DOM)
   initAddStudent();
