@@ -413,6 +413,8 @@ async function init() {
   initDailyButtons();
   initBehaviorButtons();
   initLogButtons();
+  UI.initLogColumnSelector();
+  UI.initLogDateFilter();
   initSettingsButtons();
 
   // Initialize Firebase and sync cloud data

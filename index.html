@@ -116,6 +116,7 @@
           <button id="btn-recompute" class="btn btn-secondary" title="Recalculates all levels, titles, and progress bars from stored XP totals.">🔄 Recompute Progress</button>
         </div>
       </div>
+      <div id="recent-levelups" class="recent-levelups"></div>
       <div class="table-wrap">
         <table id="tracker-table">
           <thead><tr><th>Name</th><th>Title</th><th>Level</th><th>XP in Level</th><th>XP to Next</th><th>Progress</th><th>XP Debt</th><th>Guild</th><th>Actions</th></tr></thead>
@@ -196,13 +197,18 @@
       <div class="tab-header">
         <h2>📜 XP Log</h2>
         <div class="tab-actions">
+          <label class="log-date-filter">📅 <input type="date" id="log-date-filter" /></label>
+          <div class="log-col-selector-wrap">
+            <button id="btn-col-selector" class="btn btn-secondary">🔧 Columns</button>
+            <div id="col-selector-dropdown" class="col-selector-dropdown hidden"></div>
+          </div>
           <button id="btn-export-log" class="btn btn-secondary">📤 Export CSV</button>
           <button id="btn-clear-log" class="btn btn-danger">🗑️ Clear Log</button>
         </div>
       </div>
       <div class="table-wrap">
         <table id="log-table">
-          <thead><tr><th>Date</th><th>Student</th><th>Earned</th><th>Debt Paid</th><th>XP Applied</th><th>Overflow</th><th>Coins</th><th>Debt After</th><th>Cum XP</th><th>Level</th><th>Title</th></tr></thead>
+          <thead id="log-thead"></thead>
           <tbody id="log-body"></tbody>
         </table>
       </div>

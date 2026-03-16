@@ -289,3 +289,37 @@ export function buildLeaderboardData() {
 
   return entries;
 }
+
+// ── Recent Level Ups (from XP log, last N days) ──
+export function getRecentLevelUps(days = 3) {
+  const log = Store.getXPLog();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+
+  // Sort log by date asc, then by student
+  const sorted = [...log].sort((a, b) => a.date.localeCompare(b.date) || a.student.localeCompare(b.student));
+
+  // Track each student's previous level to detect changes
+  const prevLevel = {};
+  const levelUps = [];
+
+  for (const entry of sorted) {
+    const lvl = entry.levelAfter || 1;
+    const prev = prevLevel[entry.student];
+    if (prev !== undefined && lvl > prev && entry.date >= cutoffStr) {
+      levelUps.push({
+        student: entry.student,
+        date: entry.date,
+        prevLevel: prev,
+        newLevel: lvl,
+        title: entry.titleAfter || ''
+      });
+    }
+    prevLevel[entry.student] = lvl;
+  }
+
+  // Sort most recent first
+  levelUps.sort((a, b) => b.date.localeCompare(a.date) || a.student.localeCompare(b.student));
+  return levelUps;
+}

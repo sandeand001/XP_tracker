@@ -250,6 +250,187 @@ td {
 tbody tr:nth-child(even) { background: rgba(124,77,255,0.04); }
 tbody tr:hover { background: rgba(124,77,255,0.1); }
 
+/* ── Recent Level Ups banner ── */
+.recent-levelups.hidden { display: none !important; }
+
+.levelup-banner {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(124,77,255,0.15), rgba(255,215,0,0.1));
+  border: 1px solid rgba(255,215,0,0.3);
+  border-radius: var(--radius);
+  box-shadow: 0 0 20px rgba(255,215,0,0.08), var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+.levelup-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: conic-gradient(from 0deg, transparent 0%, rgba(255,215,0,0.04) 25%, transparent 50%);
+  animation: levelup-shimmer 6s linear infinite;
+}
+@keyframes levelup-shimmer {
+  to { transform: rotate(360deg); }
+}
+
+.levelup-banner-title {
+  font-family: var(--font-fantasy);
+  font-size: 1.1rem;
+  color: var(--accent-gold);
+  margin-bottom: 0.75rem;
+  text-shadow: 0 0 12px rgba(255,215,0,0.3);
+  position: relative;
+}
+
+.levelup-table {
+  width: 100%;
+  border-collapse: collapse;
+  position: relative;
+  background: rgba(16,12,36,0.5);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.levelup-table thead {
+  background: rgba(255,215,0,0.08);
+}
+.levelup-table th {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent-gold);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255,215,0,0.15);
+}
+.levelup-table th.text-center,
+.levelup-table td.text-center {
+  text-align: center;
+}
+.levelup-table td {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(255,215,0,0.06);
+  color: var(--ink);
+}
+.levelup-table tbody tr:nth-child(even) { background: rgba(255,215,0,0.03); }
+.levelup-table tbody tr:hover { background: rgba(255,215,0,0.08); }
+
+.levelup-level { white-space: nowrap; }
+.levelup-from {
+  color: var(--ink-light);
+  opacity: 0.7;
+}
+.levelup-arrow {
+  font-size: 0.85rem;
+  vertical-align: middle;
+}
+.levelup-to {
+  color: var(--accent-gold);
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(255,215,0,0.3);
+}
+
+/* ── Log table: sortable headers ── */
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+.sortable-th:hover {
+  color: var(--accent-gold);
+}
+.sort-arrow {
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+
+/* ── Log date filter ── */
+.log-date-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.log-date-filter input[type="date"] {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.82rem;
+  border: 1px solid rgba(124,77,255,0.25);
+  border-radius: 4px;
+  background: rgba(16,12,36,0.6);
+  color: var(--ink);
+  outline: none;
+  color-scheme: dark;
+}
+.log-date-filter input[type="date"]:focus {
+  border-color: var(--accent-purple);
+}
+
+/* ── Column selector dropdown ── */
+.log-col-selector-wrap {
+  position: relative;
+  display: inline-block;
+}
+.col-selector-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  min-width: 170px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--parchment-dark);
+  border: 1px solid rgba(124,77,255,0.25);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.col-selector-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.82rem;
+  color: var(--ink);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.col-selector-item:hover {
+  background: rgba(124,77,255,0.12);
+}
+.col-selector-item input[type="checkbox"] {
+  accent-color: var(--accent-purple);
+  cursor: pointer;
+}
+.col-selector-btn-row {
+  display: flex;
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(124,77,255,0.15);
+}
+.btn-xs {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  background: rgba(124,77,255,0.15);
+  color: var(--ink-light);
+  border: 1px solid rgba(124,77,255,0.2);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.btn-xs:hover {
+  background: rgba(124,77,255,0.3);
+}
+
 /* Checkbox cells */
 td.check-cell { text-align: center; }
 td.check-cell input[type="checkbox"] {

@@ -2,7 +2,7 @@
 // ui.js — All view rendering functions
 // ============================================================
 
-import { GUILDS, getRankBadge } from './config.js';
+import { GUILDS, getRankBadge, TITLE_BADGES } from './config.js';
 import * as Store from './store.js';
 import * as Engine from './engine.js';
 
@@ -40,8 +40,40 @@ export function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
 }
 
+// ── Recent Level Ups banner ──
+export function renderRecentLevelUps() {
+  const container = document.getElementById('recent-levelups');
+  if (!container) return;
+  const levelUps = Engine.getRecentLevelUps(3);
+  if (levelUps.length === 0) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  const rows = levelUps.map(lu => {
+    const badge = TITLE_BADGES[lu.title] || '⬆️';
+    return `<tr>
+      <td class="font-mono">${esc(lu.date)}</td>
+      <td><strong>${esc(lu.student)}</strong></td>
+      <td class="text-center levelup-level"><span class="levelup-from">${lu.prevLevel}</span> <span class="levelup-arrow">--&gt;</span> <span class="levelup-to">${lu.newLevel}</span></td>
+      <td>${badge} ${esc(lu.title)}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML = `
+    <div class="levelup-banner">
+      <h3 class="levelup-banner-title">🏆 Recent Level Ups</h3>
+      <table class="levelup-table">
+        <thead><tr><th>Date</th><th>Student</th><th class="text-center">Level</th><th>Title</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 // ── XP Tracker view ──
 export function renderTracker() {
+  renderRecentLevelUps();
   const students = Store.getStudents();
   const tbody = document.getElementById('tracker-body');
   tbody.innerHTML = '';
@@ -516,37 +548,217 @@ export function renderCurrency() {
 }
 
 // ── XP Log view ──
-export function renderLog() {
+// ── Log column definitions ──
+const LOG_COLUMNS = [
+  { key: 'date',      label: 'Date',       field: 'date',         type: 'text' },
+  { key: 'student',   label: 'Student',    field: 'student',      type: 'text' },
+  { key: 'earned',    label: 'Earned',     field: 'dailyTotalRaw', type: 'number' },
+  { key: 'debtPaid',  label: 'Debt Paid',  field: 'debtApplied',  type: 'number' },
+  { key: 'xpApplied', label: 'XP Applied', field: 'xpToLevel',    type: 'number' },
+  { key: 'overflow',  label: 'Overflow',   field: 'overflowXP',   type: 'number' },
+  { key: 'coins',     label: 'Coins',      field: 'currencyGain', type: 'number' },
+  { key: 'debtAfter', label: 'Debt After', field: 'debtAfter',    type: 'number' },
+  { key: 'cumXP',     label: 'Cum XP',     field: 'cumXPAfter',   type: 'number' },
+  { key: 'level',     label: 'Level',      field: 'levelAfter',   type: 'number' },
+  { key: 'title',     label: 'Title',      field: 'titleAfter',   type: 'text' },
+];
+
+let logState = _loadLogState();
+
+function _loadLogState() {
+  try {
+    const saved = localStorage.getItem('xp_log_view_state');
+    if (saved) {
+      const s = JSON.parse(saved);
+      s.visibleCols = new Set(s.visibleCols);
+      return s;
+    }
+  } catch (e) { /* ignore */ }
+  return { sortNameAsc: true, sortByName: false, visibleCols: new Set(LOG_COLUMNS.map(c => c.key)), dateFilter: '' };
+}
+
+function _saveLogState() {
+  const s = { ...logState, visibleCols: [...logState.visibleCols] };
+  localStorage.setItem('xp_log_view_state', JSON.stringify(s));
+}
+
+function _getVisibleCols() {
+  return LOG_COLUMNS.filter(c => logState.visibleCols.has(c.key));
+}
+
+function _getFilteredSortedLog() {
   const log = Store.getXPLog();
+  let entries = [...log];
+
+  // Filter by date
+  const df = (logState.dateFilter || '').trim();
+  if (df) {
+    entries = entries.filter(e => (e.date || '') === df);
+  }
+
+  // Sort by student name or default reverse-chronological
+  if (logState.sortByName) {
+    entries.sort((a, b) => {
+      const cmp = String(a.student || '').localeCompare(String(b.student || ''));
+      return logState.sortNameAsc ? cmp : -cmp;
+    });
+  } else {
+    entries.reverse();
+  }
+
+  return entries.slice(0, 200);
+}
+
+function _renderLogBody() {
+  const visCols = _getVisibleCols();
+  const entries = _getFilteredSortedLog();
+  const totalLog = Store.getXPLog();
   const tbody = document.getElementById('log-body');
   tbody.innerHTML = '';
 
-  // Show most recent first, cap at 200 for performance
-  const recent = [...log].reverse().slice(0, 200);
-
-  if (recent.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:2rem;color:#999">No log entries yet. Process Daily XP to create entries.</td></tr>`;
+  if (entries.length === 0) {
+    const msg = totalLog.length > 0
+      ? 'No entries match the current filters.'
+      : 'No log entries yet. Process Daily XP to create entries.';
+    tbody.innerHTML = `<tr><td colspan="${visCols.length}" style="text-align:center;padding:2rem;color:#999">${msg}</td></tr>`;
     return;
   }
 
-  for (const e of recent) {
+  for (const e of entries) {
     const tr = document.createElement('tr');
-    const coinClass = (e.currencyGain || 0) < 0 ? 'currency-spent' : '';
-    tr.innerHTML = `
-      <td class="font-mono">${esc(e.date)}</td>
-      <td>${esc(e.student)}</td>
-      <td class="text-center">${e.dailyTotalRaw || 0}</td>
-      <td class="text-center">${e.debtApplied || 0}</td>
-      <td class="text-center">${e.xpToLevel || 0}</td>
-      <td class="text-center">${e.overflowXP || 0}</td>
-      <td class="text-center ${coinClass}">${e.currencyGain || 0}</td>
-      <td class="text-center ${(e.debtAfter||0) < 0 ? 'debt-negative' : ''}">${e.debtAfter || 0}</td>
-      <td class="text-center">${e.cumXPAfter || 0}</td>
-      <td class="text-center">${e.levelAfter || 0}</td>
-      <td>${esc(e.titleAfter || '')}</td>
-    `;
+    for (const col of visCols) {
+      const td = document.createElement('td');
+      const val = e[col.field];
+      if (col.type === 'number') td.classList.add('text-center');
+      if (col.key === 'date') td.classList.add('font-mono');
+      if (col.key === 'coins' && (e.currencyGain || 0) < 0) td.classList.add('currency-spent');
+      if (col.key === 'debtAfter' && (e.debtAfter || 0) < 0) td.classList.add('debt-negative');
+      td.textContent = col.type === 'text' ? (val || '') : (val ?? 0);
+      tr.appendChild(td);
+    }
     tbody.appendChild(tr);
   }
+}
+
+function _renderColumnSelector() {
+  const dropdown = document.getElementById('col-selector-dropdown');
+  if (!dropdown) return;
+  dropdown.innerHTML = '';
+
+  // Select All / Deselect All buttons
+  const btnRow = document.createElement('div');
+  btnRow.classList.add('col-selector-btn-row');
+  const btnAll = document.createElement('button');
+  btnAll.textContent = 'Select All';
+  btnAll.classList.add('btn', 'btn-xs');
+  btnAll.addEventListener('click', () => {
+    LOG_COLUMNS.forEach(c => logState.visibleCols.add(c.key));
+    _saveLogState();
+    renderLog();
+  });
+  const btnNone = document.createElement('button');
+  btnNone.textContent = 'Deselect All';
+  btnNone.classList.add('btn', 'btn-xs');
+  btnNone.addEventListener('click', () => {
+    logState.visibleCols = new Set([LOG_COLUMNS[0].key]);
+    _saveLogState();
+    renderLog();
+  });
+  btnRow.appendChild(btnAll);
+  btnRow.appendChild(btnNone);
+  dropdown.appendChild(btnRow);
+
+  for (const col of LOG_COLUMNS) {
+    const label = document.createElement('label');
+    label.classList.add('col-selector-item');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = logState.visibleCols.has(col.key);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        logState.visibleCols.add(col.key);
+      } else if (logState.visibleCols.size > 1) {
+        logState.visibleCols.delete(col.key);
+      } else {
+        cb.checked = true;
+        return;
+      }
+      _saveLogState();
+      renderLog();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + col.label));
+    dropdown.appendChild(label);
+  }
+}
+
+export function initLogColumnSelector() {
+  const btn = document.getElementById('btn-col-selector');
+  const dropdown = document.getElementById('col-selector-dropdown');
+  if (!btn || !dropdown) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target) && e.target !== btn) {
+      dropdown.classList.add('hidden');
+    }
+  });
+}
+
+export function initLogDateFilter() {
+  const input = document.getElementById('log-date-filter');
+  if (!input) return;
+  input.value = logState.dateFilter || '';
+  input.addEventListener('change', () => {
+    logState.dateFilter = input.value;
+    _saveLogState();
+    _renderLogBody();
+  });
+}
+
+export function renderLog() {
+  const thead = document.getElementById('log-thead');
+  const visCols = _getVisibleCols();
+  thead.innerHTML = '';
+
+  // Sync date filter input
+  const dateInput = document.getElementById('log-date-filter');
+  if (dateInput) dateInput.value = logState.dateFilter || '';
+
+  // Header row — only Student column is sortable (by name)
+  const headerRow = document.createElement('tr');
+  for (const col of visCols) {
+    const th = document.createElement('th');
+    if (col.key === 'student') {
+      th.classList.add('sortable-th');
+      th.textContent = col.label;
+      if (logState.sortByName) {
+        const arrow = document.createElement('span');
+        arrow.classList.add('sort-arrow');
+        arrow.textContent = logState.sortNameAsc ? ' ▲' : ' ▼';
+        th.appendChild(arrow);
+      }
+      th.addEventListener('click', () => {
+        if (logState.sortByName) {
+          logState.sortNameAsc = !logState.sortNameAsc;
+        } else {
+          logState.sortByName = true;
+          logState.sortNameAsc = true;
+        }
+        _saveLogState();
+        renderLog();
+      });
+    } else {
+      th.textContent = col.label;
+    }
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  _renderLogBody();
+  _renderColumnSelector();
 }
 
 // ── Settings view ──
