@@ -103,13 +103,13 @@ export function setUser(user) {
   _ready = user != null && db != null;
 
   if (user) {
-    // If a different user logs in, clear localStorage to prevent data leakage
+    // Clear localStorage if switching users OR first time using auth
     const lastUid = localStorage.getItem('xp_last_uid');
-    if (lastUid && lastUid !== user.uid) {
+    if (lastUid !== user.uid) {
       for (const key of SYNC_KEYS) {
         localStorage.removeItem(key);
       }
-      console.log('🔒 Cleared cached data from previous user');
+      console.log('🔒 Cleared cached data — will pull from cloud');
     }
     localStorage.setItem('xp_last_uid', user.uid);
   }

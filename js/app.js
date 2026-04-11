@@ -416,7 +416,16 @@ function showLoginError(msg) {
 
 // ── Initialize (post-auth) ──
 async function initApp() {
-  // Ensure config exists
+  // Migrate old flat appData/ to per-user path if needed
+  await migrateOldData();
+
+  // Sync cloud data FIRST — before any local saves that might push stale data
+  const updated = await pullFromCloud();
+  if (updated) {
+    Engine.recomputeAllProgress();
+  }
+
+  // Ensure config exists (after pull so we don't overwrite cloud config)
   const cfg = Store.getConfig();
   if (!cfg.DAILY_WEIGHTS) Store.saveConfig(Store.getConfig());
 
@@ -435,15 +444,6 @@ async function initApp() {
   UI.initLogColumnSelector();
   UI.initLogDateFilter();
   initSettingsButtons();
-
-  // Migrate old flat appData/ to per-user path if needed
-  await migrateOldData();
-
-  // Sync cloud data
-  const updated = await pullFromCloud();
-  if (updated) {
-    Engine.recomputeAllProgress();
-  }
 
   // ── Nav link clicks ──
   document.addEventListener('click', (e) => {
