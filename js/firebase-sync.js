@@ -44,6 +44,10 @@ export function signUpWithEmail(email, password) {
   return firebase.auth().createUserWithEmailAndPassword(email, password);
 }
 
+export function resetPassword(email) {
+  return firebase.auth().sendPasswordResetEmail(email);
+}
+
 export function signInWithGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
   // Try popup first, fall back to redirect on mobile/blocked popups

@@ -6,7 +6,7 @@ import * as Store from './store.js';
 import * as Engine from './engine.js';
 import * as UI from './ui.js';
 import { GUILDS } from './config.js';
-import { initFirebase, pullFromCloud, listenForChanges, setUser, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, onAuthChange, migrateOldData } from './firebase-sync.js';
+import { initFirebase, pullFromCloud, listenForChanges, setUser, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, onAuthChange, migrateOldData, resetPassword } from './firebase-sync.js';
 
 // ── Theme System ──
 function applyTheme(themeId) {
@@ -490,10 +490,33 @@ async function init() {
   document.getElementById('login-toggle-link').addEventListener('click', (e) => {
     e.preventDefault();
     isSignUp = !isSignUp;
-    document.getElementById('login-submit-btn').textContent = isSignUp ? 'Sign Up' : 'Sign In';
-    document.getElementById('login-toggle-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
-    document.getElementById('login-toggle-link').textContent = isSignUp ? 'Sign In' : 'Sign Up';
+    document.getElementById('login-submit-btn').innerHTML = isSignUp
+      ? '<span class="btn-icon">✦</span> Join the Order'
+      : '<span class="btn-icon">⚡</span> Enter the Realm';
+    document.getElementById('login-toggle-text').textContent = isSignUp ? 'Already in a guild?' : 'No guild membership?';
+    document.getElementById('login-toggle-link').textContent = isSignUp ? 'Enter the Realm' : 'Join the Order';
     document.getElementById('login-error').classList.add('hidden');
+  });
+
+  // Forgot password
+  document.getElementById('login-forgot-link').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    if (!email) {
+      showLoginError('Enter your email address first, then click Forgot password.');
+      return;
+    }
+    try {
+      await resetPassword(email);
+      const errEl = document.getElementById('login-error');
+      errEl.textContent = 'Password reset email sent! Check your inbox.';
+      errEl.classList.remove('hidden');
+      errEl.style.color = '#69f0ae';
+      errEl.style.background = 'rgba(105,240,174,0.12)';
+      setTimeout(() => { errEl.style.color = ''; errEl.style.background = ''; }, 5000);
+    } catch (err) {
+      showLoginError(err.message.replace('Firebase: ', ''));
+    }
   });
 
   document.getElementById('login-form').addEventListener('submit', async (e) => {

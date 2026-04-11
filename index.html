@@ -19,20 +19,40 @@
   <!-- ═══════════ LOGIN OVERLAY ═══════════ -->
   <div id="login-overlay" class="login-overlay">
     <div class="login-card">
+      <div class="login-shield-wrap">
+        <svg viewBox="0 0 100 100" class="login-shield">
+          <polygon points="50,5 95,30 95,75 50,95 5,75 5,30" fill="none" stroke="url(#loginShieldGrad)" stroke-width="2"/>
+          <defs><linearGradient id="loginShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FFD700"/>
+            <stop offset="100%" stop-color="#B8860B"/>
+          </linearGradient></defs>
+          <text x="50" y="58" text-anchor="middle" font-size="32" fill="#FFD700">⚔</text>
+        </svg>
+      </div>
       <h1 class="login-title"><span class="title-rune">⟡</span> Classroom XP Tracker <span class="title-rune">⟡</span></h1>
-      <p class="login-subtitle">Sign in to continue</p>
+      <p class="login-subtitle">Enter the realm to continue your quest</p>
+      <div class="login-ornament">✦ ✦ ✦</div>
       <div id="login-error" class="login-error hidden"></div>
       <form id="login-form" class="login-form">
-        <input type="email" id="login-email" placeholder="Email" required autocomplete="email" />
-        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password" />
-        <button type="submit" class="btn btn-primary login-btn" id="login-submit-btn">Sign In</button>
+        <div class="login-field">
+          <span class="login-field-icon">📜</span>
+          <input type="email" id="login-email" placeholder="Email" required autocomplete="email" />
+        </div>
+        <div class="login-field">
+          <span class="login-field-icon">🔑</span>
+          <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn-quest login-btn" id="login-submit-btn"><span class="btn-icon">⚡</span> Enter the Realm</button>
       </form>
+      <p class="login-forgot">
+        <a href="#" id="login-forgot-link">Forgot your enchantment?</a>
+      </p>
       <p class="login-toggle">
-        <span id="login-toggle-text">Don't have an account?</span>
-        <a href="#" id="login-toggle-link">Sign Up</a>
+        <span id="login-toggle-text">No guild membership?</span>
+        <a href="#" id="login-toggle-link">Join the Order</a>
       </p>
       <div class="login-divider"><span>or</span></div>
-      <button id="btn-google-login" class="btn login-google-btn">🔵 Sign in with Google</button>
+      <button id="btn-google-login" class="btn login-google-btn"><span class="google-icon">G</span> Sign in with Google</button>
     </div>
   </div>
 
