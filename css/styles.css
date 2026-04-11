@@ -1088,6 +1088,67 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(10px); } }
 
+/* ═══════════ LOGIN OVERLAY ═══════════ */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg, #0d0d1a);
+  background-image: radial-gradient(ellipse at 50% 30%, rgba(124,77,255,0.15), transparent 70%);
+}
+.login-overlay.hidden { display: none; }
+.login-card {
+  background: var(--surface, rgba(255,255,255,0.04));
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 1rem; padding: 2.5rem 2rem; width: 100%; max-width: 380px;
+  text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.login-title {
+  font-family: 'Cinzel Decorative', serif; font-size: 1.3rem;
+  color: var(--gold, #FFD700); margin-bottom: 0.25rem;
+}
+.login-subtitle {
+  color: var(--muted, #aaa); font-size: 0.9rem; margin-bottom: 1.5rem;
+}
+.login-form { display: flex; flex-direction: column; gap: 0.75rem; }
+.login-form input {
+  padding: 0.7rem 1rem; border-radius: 0.5rem;
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  background: var(--input-bg, rgba(255,255,255,0.06));
+  color: var(--text, #eee); font-size: 0.95rem;
+}
+.login-form input:focus { outline: none; border-color: var(--accent, #7c4dff); }
+.login-btn {
+  padding: 0.7rem; font-size: 1rem; font-weight: 600;
+  border-radius: 0.5rem; cursor: pointer;
+}
+.login-divider {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin: 1.25rem 0; color: var(--muted, #888); font-size: 0.85rem;
+}
+.login-divider::before, .login-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border, rgba(255,255,255,0.1));
+}
+.login-google-btn {
+  width: 100%; padding: 0.7rem; font-size: 0.95rem; cursor: pointer;
+  border-radius: 0.5rem;
+  background: rgba(255,255,255,0.06); color: var(--text, #eee);
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+}
+.login-google-btn:hover { background: rgba(255,255,255,0.1); }
+.login-error {
+  background: rgba(244,67,54,0.15); color: #ff6b6b; padding: 0.6rem;
+  border-radius: 0.5rem; font-size: 0.85rem; margin-bottom: 1rem;
+}
+.login-error.hidden { display: none; }
+
+/* Sign-out button in header */
+.btn-sign-out {
+  background: none; border: 1px solid var(--border, rgba(255,255,255,0.15));
+  color: var(--muted, #aaa); padding: 0.3rem 0.7rem; border-radius: 0.4rem;
+  cursor: pointer; font-size: 0.8rem; white-space: nowrap;
+}
+.btn-sign-out:hover { color: var(--danger, #ff5252); border-color: var(--danger, #ff5252); }
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   #app-header h1 { font-size: 1.3rem; }

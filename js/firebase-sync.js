@@ -2,22 +2,16 @@
 // firebase-sync.js — Firebase Realtime Database sync layer
 // Writes go to both localStorage (instant) and Firebase (cloud).
 // On page load, Firebase data is pulled and merged into localStorage.
+// Requires Firebase Auth — data is scoped per-user under appData/{uid}/.
 // ============================================================
 
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDyzjBqum1J9pCJCkNfYtfVbmDtoynyD5k",
-  authDomain: "classroom-xp-tracker.firebaseapp.com",
-  databaseURL: "https://classroom-xp-tracker-default-rtdb.firebaseio.com",
-  projectId: "classroom-xp-tracker",
-  storageBucket: "classroom-xp-tracker.firebasestorage.app",
-  messagingSenderId: "439990199807",
-  appId: "1:439990199807:web:ce429228dea71f1bf933ca"
-};
+import { FIREBASE_CONFIG } from './firebase-config.js';
 
 // Firebase SDK globals (loaded via CDN in HTML)
 let db = null;
 let _ready = false;
 let _readyPromise = null;
+let _currentUser = null;
 
 // Keys we sync to Firebase
 const SYNC_KEYS = [
@@ -29,9 +23,38 @@ const SYNC_KEYS = [
   'xp_comments'
 ];
 
-// Convert localStorage key to a Firebase-safe path
+// Convert localStorage key to a Firebase-safe path (scoped per user)
 function fbPath(key) {
-  return 'appData/' + key.replace(/[.#$/[\]]/g, '_');
+  if (!_currentUser) throw new Error('Not authenticated');
+  return 'appData/' + _currentUser.uid + '/' + key.replace(/[.#$/[\]]/g, '_');
+}
+
+// User data root
+function userRoot() {
+  if (!_currentUser) throw new Error('Not authenticated');
+  return 'appData/' + _currentUser.uid;
+}
+
+// ── Authentication ──
+export function signInWithEmail(email, password) {
+  return firebase.auth().signInWithEmailAndPassword(email, password);
+}
+
+export function signInWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  return firebase.auth().signInWithPopup(provider);
+}
+
+export function signOut() {
+  return firebase.auth().signOut();
+}
+
+export function onAuthChange(callback) {
+  return firebase.auth().onAuthStateChanged(callback);
+}
+
+export function getCurrentUser() {
+  return _currentUser;
 }
 
 // ── Initialize Firebase ──
@@ -53,20 +76,6 @@ export function initFirebase() {
         firebase.initializeApp(FIREBASE_CONFIG);
       }
       db = firebase.database();
-
-      // Test connection
-      const connRef = firebase.database().ref('.info/connected');
-      connRef.on('value', (snap) => {
-        if (snap.val() === true) {
-          console.log('🔥 Firebase connected');
-          updateSyncStatus('connected');
-        } else {
-          console.log('⚡ Firebase disconnected — using localStorage');
-          updateSyncStatus('offline');
-        }
-      });
-
-      _ready = true;
       resolve(true);
     } catch (e) {
       console.error('Firebase init failed:', e);
@@ -76,6 +85,26 @@ export function initFirebase() {
   });
 
   return _readyPromise;
+}
+
+// Call after auth succeeds to enable sync
+export function setUser(user) {
+  _currentUser = user;
+  _ready = user != null && db != null;
+
+  if (_ready) {
+    // Test connection
+    const connRef = firebase.database().ref('.info/connected');
+    connRef.on('value', (snap) => {
+      if (snap.val() === true) {
+        console.log('🔥 Firebase connected');
+        updateSyncStatus('connected');
+      } else {
+        console.log('⚡ Firebase disconnected — using localStorage');
+        updateSyncStatus('offline');
+      }
+    });
+  }
 }
 
 export function isReady() {
@@ -96,7 +125,7 @@ export function pushToCloud(key, data) {
 export async function pullFromCloud() {
   if (!isReady()) return false;
   try {
-    const snapshot = await db.ref('appData').once('value');
+    const snapshot = await db.ref(userRoot()).once('value');
     const cloudData = snapshot.val();
     if (!cloudData) {
       console.log('No cloud data found — uploading local data');
@@ -141,7 +170,7 @@ export function pushAllToCloud() {
       }
     } catch (e) { /* skip corrupted keys */ }
   }
-  db.ref('appData').set(payload);
+  db.ref(userRoot()).set(payload);
   console.log('⬆️ Pushed all data to Firebase');
 }
 
@@ -150,7 +179,7 @@ export function listenForChanges(onDataChanged) {
   if (!isReady()) return;
   for (const key of SYNC_KEYS) {
     const fbKey = key.replace(/[.#$/[\]]/g, '_');
-    db.ref('appData/' + fbKey).on('value', (snapshot) => {
+    db.ref(userRoot() + '/' + fbKey).on('value', (snapshot) => {
       const cloudData = snapshot.val();
       if (cloudData === null || cloudData === undefined) return;
       const cloudJson = JSON.stringify(cloudData);
@@ -176,7 +205,7 @@ export function removeFromCloud(key) {
 // ── Remove all data from Firebase ──
 export function clearCloud() {
   if (!isReady()) return;
-  db.ref('appData').remove();
+  db.ref(userRoot()).remove();
 }
 
 // ── Sync status indicator ──
@@ -206,4 +235,40 @@ export function showSyncing() {
   setTimeout(() => {
     if (isReady()) updateSyncStatus('connected');
   }, 800);
+}
+
+// ── Migrate old flat appData/ to appData/{uid}/ ──
+// Moves data from the old unscoped path to the user-scoped path (one-time).
+export async function migrateOldData() {
+  if (!isReady()) return;
+  try {
+    // Check if user already has data
+    const userSnap = await db.ref(userRoot()).once('value');
+    if (userSnap.val()) return; // already has per-user data
+
+    // Check old flat path
+    const oldSnap = await db.ref('appData').once('value');
+    const oldData = oldSnap.val();
+    if (!oldData) return;
+
+    // Only migrate if old data has sync keys directly (not nested under a uid)
+    const hasDirectKeys = SYNC_KEYS.some(k => {
+      const fbKey = k.replace(/[.#$/[\]]/g, '_');
+      return oldData[fbKey] !== undefined;
+    });
+    if (!hasDirectKeys) return;
+
+    // Copy old data to user path
+    const payload = {};
+    for (const key of SYNC_KEYS) {
+      const fbKey = key.replace(/[.#$/[\]]/g, '_');
+      if (oldData[fbKey] !== undefined) {
+        payload[fbKey] = oldData[fbKey];
+      }
+    }
+    await db.ref(userRoot()).set(payload);
+    console.log('📦 Migrated old data to user-scoped path');
+  } catch (e) {
+    console.warn('Migration check failed:', e);
+  }
 }

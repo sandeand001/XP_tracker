@@ -6,7 +6,7 @@ import * as Store from './store.js';
 import * as Engine from './engine.js';
 import * as UI from './ui.js';
 import { GUILDS } from './config.js';
-import { initFirebase, pullFromCloud, listenForChanges } from './firebase-sync.js';
+import { initFirebase, pullFromCloud, listenForChanges, setUser, signInWithEmail, signInWithGoogle, signOut, onAuthChange, migrateOldData } from './firebase-sync.js';
 
 // ── Theme System ──
 function applyTheme(themeId) {
@@ -395,8 +395,27 @@ function downloadFile(content, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-// ── Initialize ──
-async function init() {
+// ── Show / hide login overlay ──
+function showLogin() {
+  document.getElementById('login-overlay').classList.remove('hidden');
+  document.getElementById('app-header').style.display = 'none';
+  document.getElementById('app-main').style.display = 'none';
+}
+
+function hideLogin() {
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.getElementById('app-header').style.display = '';
+  document.getElementById('app-main').style.display = '';
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// ── Initialize (post-auth) ──
+async function initApp() {
   // Ensure config exists
   const cfg = Store.getConfig();
   if (!cfg.DAILY_WEIGHTS) Store.saveConfig(Store.getConfig());
@@ -417,13 +436,13 @@ async function init() {
   UI.initLogDateFilter();
   initSettingsButtons();
 
-  // Initialize Firebase and sync cloud data
-  const firebaseOk = await initFirebase();
-  if (firebaseOk) {
-    const updated = await pullFromCloud();
-    if (updated) {
-      Engine.recomputeAllProgress();
-    }
+  // Migrate old flat appData/ to per-user path if needed
+  await migrateOldData();
+
+  // Sync cloud data
+  const updated = await pullFromCloud();
+  if (updated) {
+    Engine.recomputeAllProgress();
   }
 
   // ── Nav link clicks ──
@@ -450,12 +469,64 @@ async function init() {
   navigateTo(initialPage);
 
   // Listen for real-time changes from other devices
-  if (firebaseOk) {
-    listenForChanges((changedKey) => {
-      // Re-render current page when data changes from another device
-      renderPage(getCurrentPage());
-    });
+  listenForChanges((changedKey) => {
+    renderPage(getCurrentPage());
+  });
+}
+
+// ── Bootstrap — auth gate ──
+async function init() {
+  const firebaseOk = await initFirebase();
+  if (!firebaseOk) {
+    // No Firebase SDK, run offline without auth
+    await initApp();
+    hideLogin();
+    return;
   }
+
+  // Login form — email/password
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    try {
+      await signInWithEmail(email, password);
+    } catch (err) {
+      showLoginError(err.message.replace('Firebase: ', ''));
+    }
+  });
+
+  // Google sign-in
+  document.getElementById('btn-google-login').addEventListener('click', async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        showLoginError(err.message.replace('Firebase: ', ''));
+      }
+    }
+  });
+
+  // Sign-out button
+  document.getElementById('btn-sign-out').addEventListener('click', async () => {
+    await signOut();
+  });
+
+  // Auth state listener — drives everything
+  let appInitialized = false;
+  onAuthChange(async (user) => {
+    if (user) {
+      setUser(user);
+      hideLogin();
+      if (!appInitialized) {
+        appInitialized = true;
+        await initApp();
+      }
+    } else {
+      setUser(null);
+      showLogin();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
