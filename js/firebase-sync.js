@@ -247,58 +247,59 @@ export function showSyncing() {
   }, 800);
 }
 
-// ── Migrate old flat appData/ to appData/{uid}/ ──
-// One-time: moves unscoped data to the original owner's path and cleans up.
+// ── Migrate data to correct owner ──
+// One-time: moves all data to the original owner's path and wipes everything else.
 const ORIGINAL_OWNER_UID = '37OUwWYORqUMxnPga6EZzUOY1uZ2';
+const WRONG_UID = 'EllFqtQfX1SHtk8Q1rK75fO68g63';
 
 export async function migrateOldData() {
   if (!isReady()) return;
+  if (_currentUser.uid !== ORIGINAL_OWNER_UID) return; // only owner runs migration
+
   try {
-    // Read the entire appData node
     const rootSnap = await db.ref('appData').once('value');
     const rootData = rootSnap.val();
     if (!rootData) return;
 
-    // Check if old flat keys still exist at appData/ level (not nested under a uid)
-    const flatKeys = [];
+    // Check if owner already has data — if so, migration is done
+    if (rootData[ORIGINAL_OWNER_UID]) return;
+
+    // Gather data from the wrong UID and/or flat keys
+    const payload = {};
+    const wrongData = rootData[WRONG_UID];
+
+    // Prefer data from the wrong UID node (most complete)
+    if (wrongData) {
+      for (const key of SYNC_KEYS) {
+        const fbKey = key.replace(/[.#$/[\]]/g, '_');
+        if (wrongData[fbKey] !== undefined) {
+          payload[fbKey] = wrongData[fbKey];
+        }
+      }
+    }
+
+    // Also grab any flat keys not already covered
     for (const key of SYNC_KEYS) {
       const fbKey = key.replace(/[.#$/[\]]/g, '_');
-      if (rootData[fbKey] !== undefined) {
-        flatKeys.push(fbKey);
-      }
-    }
-    if (flatKeys.length === 0) return; // already migrated
-
-    // Only the original owner gets the data
-    if (_currentUser.uid === ORIGINAL_OWNER_UID) {
-      // Check if owner already has scoped data
-      const ownerData = rootData[ORIGINAL_OWNER_UID];
-      if (!ownerData) {
-        const payload = {};
-        for (const fbKey of flatKeys) {
-          payload[fbKey] = rootData[fbKey];
-        }
-        await db.ref(userRoot()).set(payload);
-        console.log('📦 Migrated old data to owner path');
+      if (!payload[fbKey] && rootData[fbKey] !== undefined) {
+        payload[fbKey] = rootData[fbKey];
       }
     }
 
-    // Delete the old flat keys (any authenticated user can trigger cleanup)
-    const updates = {};
-    for (const fbKey of flatKeys) {
-      updates[fbKey] = null;
-    }
-    // Also remove any data incorrectly copied to non-owner users
+    if (Object.keys(payload).length === 0) return;
+
+    // Write to correct owner path
+    await db.ref('appData/' + ORIGINAL_OWNER_UID).set(payload);
+
+    // Delete everything else: wrong UID, flat keys, stray nodes
+    const cleanup = {};
     for (const nodeKey of Object.keys(rootData)) {
-      if (nodeKey !== ORIGINAL_OWNER_UID && !flatKeys.includes(nodeKey)) {
-        // This is a UID node that isn't the owner — check if it's an accidental copy
-        if (nodeKey.length > 20) { // UIDs are long strings
-          updates[nodeKey] = null;
-        }
+      if (nodeKey !== ORIGINAL_OWNER_UID) {
+        cleanup[nodeKey] = null;
       }
     }
-    await db.ref('appData').update(updates);
-    console.log('🧹 Cleaned up old flat data and accidental copies');
+    await db.ref('appData').update(cleanup);
+    console.log('📦 Migrated all data to owner and cleaned up');
   } catch (e) {
     console.warn('Migration failed:', e);
   }
