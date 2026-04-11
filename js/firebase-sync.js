@@ -254,44 +254,30 @@ const WRONG_UID = 'EllFqtQfX1SHtk8Q1rK75fO68g63';
 
 export async function migrateOldData() {
   if (!isReady()) return;
-  if (_currentUser.uid !== ORIGINAL_OWNER_UID) return; // only owner runs migration
 
   try {
     const rootSnap = await db.ref('appData').once('value');
     const rootData = rootSnap.val();
     if (!rootData) return;
 
-    // Check if owner already has data — if so, migration is done
-    if (rootData[ORIGINAL_OWNER_UID]) return;
+    // If owner already has data, migration is done
+    if (rootData[ORIGINAL_OWNER_UID]) {
+      // Still clean up wrong UID if it exists
+      if (rootData[WRONG_UID]) {
+        await db.ref('appData/' + WRONG_UID).remove();
+        console.log('🧹 Removed leftover wrong UID node');
+      }
+      return;
+    }
 
-    // Gather data from the wrong UID and/or flat keys
-    const payload = {};
+    // No owner node yet — grab data from wrong UID
     const wrongData = rootData[WRONG_UID];
+    if (!wrongData) return;
 
-    // Prefer data from the wrong UID node (most complete)
-    if (wrongData) {
-      for (const key of SYNC_KEYS) {
-        const fbKey = key.replace(/[.#$/[\]]/g, '_');
-        if (wrongData[fbKey] !== undefined) {
-          payload[fbKey] = wrongData[fbKey];
-        }
-      }
-    }
+    // Copy everything from the wrong UID node (including xp_theme, xp_layout, etc.)
+    await db.ref('appData/' + ORIGINAL_OWNER_UID).set(wrongData);
 
-    // Also grab any flat keys not already covered
-    for (const key of SYNC_KEYS) {
-      const fbKey = key.replace(/[.#$/[\]]/g, '_');
-      if (!payload[fbKey] && rootData[fbKey] !== undefined) {
-        payload[fbKey] = rootData[fbKey];
-      }
-    }
-
-    if (Object.keys(payload).length === 0) return;
-
-    // Write to correct owner path
-    await db.ref('appData/' + ORIGINAL_OWNER_UID).set(payload);
-
-    // Delete everything else: wrong UID, flat keys, stray nodes
+    // Delete wrong UID and any other stray nodes
     const cleanup = {};
     for (const nodeKey of Object.keys(rootData)) {
       if (nodeKey !== ORIGINAL_OWNER_UID) {
@@ -299,7 +285,7 @@ export async function migrateOldData() {
       }
     }
     await db.ref('appData').update(cleanup);
-    console.log('📦 Migrated all data to owner and cleaned up');
+    console.log('📦 Migrated all data to correct owner and cleaned up');
   } catch (e) {
     console.warn('Migration failed:', e);
   }
