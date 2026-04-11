@@ -102,6 +102,18 @@ export function setUser(user) {
   _currentUser = user;
   _ready = user != null && db != null;
 
+  if (user) {
+    // If a different user logs in, clear localStorage to prevent data leakage
+    const lastUid = localStorage.getItem('xp_last_uid');
+    if (lastUid && lastUid !== user.uid) {
+      for (const key of SYNC_KEYS) {
+        localStorage.removeItem(key);
+      }
+      console.log('🔒 Cleared cached data from previous user');
+    }
+    localStorage.setItem('xp_last_uid', user.uid);
+  }
+
   if (_ready) {
     // Test connection
     const connRef = firebase.database().ref('.info/connected');
@@ -125,7 +137,7 @@ export function isReady() {
 export function pushToCloud(key, data) {
   if (!isReady()) return;
   try {
-    db.ref(fbPath(key)).set(data);
+    db.ref(fbPath(key)).set(sanitizeKeys(data));
   } catch (e) {
     console.warn('Firebase push failed for', key, e);
   }
@@ -138,8 +150,7 @@ export async function pullFromCloud() {
     const snapshot = await db.ref(userRoot()).once('value');
     const cloudData = snapshot.val();
     if (!cloudData) {
-      console.log('No cloud data found — uploading local data');
-      pushAllToCloud();
+      console.log('No cloud data found — starting fresh');
       return false;
     }
 
@@ -167,6 +178,18 @@ export async function pullFromCloud() {
   }
 }
 
+// Sanitize object keys recursively for Firebase (remove . # $ / [ ])
+function sanitizeKeys(obj) {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeKeys);
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const safeKey = key.replace(/[.#$/[\]]/g, '_');
+    result[safeKey] = sanitizeKeys(value);
+  }
+  return result;
+}
+
 // ── Push ALL localStorage data to Firebase (full upload) ──
 export function pushAllToCloud() {
   if (!isReady()) return;
@@ -176,7 +199,7 @@ export function pushAllToCloud() {
     try {
       const raw = localStorage.getItem(key);
       if (raw) {
-        payload[fbKey] = JSON.parse(raw);
+        payload[fbKey] = sanitizeKeys(JSON.parse(raw));
       }
     } catch (e) { /* skip corrupted keys */ }
   }
@@ -248,45 +271,12 @@ export function showSyncing() {
 }
 
 // ── Migrate data to correct owner ──
-// One-time: moves all data to the original owner's path and wipes everything else.
+// One-time: the data has already been moved in Firebase console.
+// This just verifies the owner can read their data.
 const ORIGINAL_OWNER_UID = '37OUwWYORqUMxnPga6EZzUOY1uZ2';
-const WRONG_UID = 'EllFqtQfX1SHtk8Q1rK75fO68g63';
 
 export async function migrateOldData() {
-  if (!isReady()) return;
-
-  try {
-    const rootSnap = await db.ref('appData').once('value');
-    const rootData = rootSnap.val();
-    if (!rootData) return;
-
-    // If owner already has data, migration is done
-    if (rootData[ORIGINAL_OWNER_UID]) {
-      // Still clean up wrong UID if it exists
-      if (rootData[WRONG_UID]) {
-        await db.ref('appData/' + WRONG_UID).remove();
-        console.log('🧹 Removed leftover wrong UID node');
-      }
-      return;
-    }
-
-    // No owner node yet — grab data from wrong UID
-    const wrongData = rootData[WRONG_UID];
-    if (!wrongData) return;
-
-    // Copy everything from the wrong UID node (including xp_theme, xp_layout, etc.)
-    await db.ref('appData/' + ORIGINAL_OWNER_UID).set(wrongData);
-
-    // Delete wrong UID and any other stray nodes
-    const cleanup = {};
-    for (const nodeKey of Object.keys(rootData)) {
-      if (nodeKey !== ORIGINAL_OWNER_UID) {
-        cleanup[nodeKey] = null;
-      }
-    }
-    await db.ref('appData').update(cleanup);
-    console.log('📦 Migrated all data to correct owner and cleaned up');
-  } catch (e) {
-    console.warn('Migration failed:', e);
-  }
+  // Migration is complete — data is already at appData/37OUw.../
+  // This is now a no-op. Can be removed in a future cleanup.
+  return;
 }
