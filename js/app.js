@@ -536,6 +536,13 @@ async function init() {
       if (!appInitialized) {
         appInitialized = true;
         await initApp();
+      } else {
+        // Re-sync cloud data on user switch
+        const updated = await pullFromCloud();
+        if (updated) {
+          Engine.recomputeAllProgress();
+        }
+        renderPage(getCurrentPage());
       }
     } else {
       setUser(null);
