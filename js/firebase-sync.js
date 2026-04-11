@@ -40,9 +40,19 @@ export function signInWithEmail(email, password) {
   return firebase.auth().signInWithEmailAndPassword(email, password);
 }
 
+export function signUpWithEmail(email, password) {
+  return firebase.auth().createUserWithEmailAndPassword(email, password);
+}
+
 export function signInWithGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  return firebase.auth().signInWithPopup(provider);
+  // Try popup first, fall back to redirect on mobile/blocked popups
+  return firebase.auth().signInWithPopup(provider).catch((err) => {
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+      return firebase.auth().signInWithRedirect(provider);
+    }
+    throw err;
+  });
 }
 
 export function signOut() {

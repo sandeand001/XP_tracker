@@ -1141,6 +1141,15 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 }
 .login-error.hidden { display: none; }
 
+/* Login toggle (sign in / sign up switch) */
+.login-toggle {
+  margin-top: 0.75rem; font-size: 0.85rem; color: var(--muted, #aaa);
+}
+.login-toggle a {
+  color: var(--accent, #7c4dff); text-decoration: none; font-weight: 600;
+}
+.login-toggle a:hover { text-decoration: underline; }
+
 /* Sign-out button in header */
 .btn-sign-out {
   background: none; border: 1px solid var(--border, rgba(255,255,255,0.15));

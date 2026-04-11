@@ -6,7 +6,7 @@ import * as Store from './store.js';
 import * as Engine from './engine.js';
 import * as UI from './ui.js';
 import { GUILDS } from './config.js';
-import { initFirebase, pullFromCloud, listenForChanges, setUser, signInWithEmail, signInWithGoogle, signOut, onAuthChange, migrateOldData } from './firebase-sync.js';
+import { initFirebase, pullFromCloud, listenForChanges, setUser, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, onAuthChange, migrateOldData } from './firebase-sync.js';
 
 // ── Theme System ──
 function applyTheme(themeId) {
@@ -484,13 +484,28 @@ async function init() {
     return;
   }
 
-  // Login form — email/password
+  // Login form — email/password (sign in or sign up)
+  let isSignUp = false;
+
+  document.getElementById('login-toggle-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    isSignUp = !isSignUp;
+    document.getElementById('login-submit-btn').textContent = isSignUp ? 'Sign Up' : 'Sign In';
+    document.getElementById('login-toggle-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
+    document.getElementById('login-toggle-link').textContent = isSignUp ? 'Sign In' : 'Sign Up';
+    document.getElementById('login-error').classList.add('hidden');
+  });
+
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     try {
-      await signInWithEmail(email, password);
+      if (isSignUp) {
+        await signUpWithEmail(email, password);
+      } else {
+        await signInWithEmail(email, password);
+      }
     } catch (err) {
       showLoginError(err.message.replace('Firebase: ', ''));
     }
