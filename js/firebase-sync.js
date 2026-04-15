@@ -163,7 +163,8 @@ export async function pullFromCloud() {
     for (const key of SYNC_KEYS) {
       const fbKey = key.replace(/[.#$/[\]]/g, '_');
       if (cloudData[fbKey] !== undefined && cloudData[fbKey] !== null) {
-        const cloudJson = JSON.stringify(cloudData[fbKey]);
+        const restored = unsanitizeKeys(cloudData[fbKey]);
+        const cloudJson = JSON.stringify(restored);
         const localJson = localStorage.getItem(key);
         if (cloudJson !== localJson) {
           localStorage.setItem(key, cloudJson);
@@ -172,26 +173,92 @@ export async function pullFromCloud() {
       }
     }
 
+    // Migrate old lossy sanitized keys (e.g., "Jacob G_" → "Jacob G.")
+    const migrated = migrateOldSanitizedKeys();
+
     if (updated) {
       console.log('☁️ Synced cloud data → localStorage');
     }
-    return updated;
+    // Re-push with new reversible encoding if old keys were migrated
+    if (migrated) {
+      pushAllToCloud();
+    }
+    return updated || migrated;
   } catch (e) {
     console.warn('Firebase pull failed:', e);
     return false;
   }
 }
 
-// Sanitize object keys recursively for Firebase (remove . # $ / [ ])
+// Sanitize object keys recursively for Firebase (reversible encoding)
 function sanitizeKeys(obj) {
   if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(sanitizeKeys);
   const result = {};
   for (const [key, value] of Object.entries(obj)) {
-    const safeKey = key.replace(/[.#$/[\]]/g, '_');
+    const safeKey = key
+      .replace(/\./g, '__DOT__')
+      .replace(/#/g, '__HASH__')
+      .replace(/\$/g, '__DOLLAR__')
+      .replace(/\//g, '__SLASH__')
+      .replace(/\[/g, '__LBRACK__')
+      .replace(/]/g, '__RBRACK__');
     result[safeKey] = sanitizeKeys(value);
   }
   return result;
+}
+
+// Reverse sanitizeKeys — restore original keys from Firebase
+function unsanitizeKeys(obj) {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(unsanitizeKeys);
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const originalKey = key
+      .replace(/__DOT__/g, '.')
+      .replace(/__HASH__/g, '#')
+      .replace(/__DOLLAR__/g, '$')
+      .replace(/__SLASH__/g, '/')
+      .replace(/__LBRACK__/g, '[')
+      .replace(/__RBRACK__/g, ']');
+    result[originalKey] = unsanitizeKeys(value);
+  }
+  return result;
+}
+
+// Migrate old lossy sanitized keys (e.g., "Jacob G_" → "Jacob G.") using student roster
+function migrateOldSanitizedKeys() {
+  try {
+    const students = JSON.parse(localStorage.getItem('xp_students') || '[]');
+    if (!students.length) return false;
+    const stateKeys = ['xp_daily_state', 'xp_behavior_state'];
+    let migrated = false;
+
+    for (const key of stateKeys) {
+      const state = JSON.parse(localStorage.getItem(key) || '{}');
+      let changed = false;
+      for (const student of students) {
+        const name = student.name;
+        const oldSanitized = name.replace(/[.#$/[\]]/g, '_');
+        if (name !== oldSanitized && state[oldSanitized] && !state[name]) {
+          state[name] = state[oldSanitized];
+          delete state[oldSanitized];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(state));
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      console.log('🔄 Migrated old sanitized keys to correct student names');
+    }
+    return migrated;
+  } catch (e) {
+    console.warn('Key migration failed:', e);
+    return false;
+  }
 }
 
 // ── Push ALL localStorage data to Firebase (full upload) ──
@@ -219,7 +286,8 @@ export function listenForChanges(onDataChanged) {
     db.ref(userRoot() + '/' + fbKey).on('value', (snapshot) => {
       const cloudData = snapshot.val();
       if (cloudData === null || cloudData === undefined) return;
-      const cloudJson = JSON.stringify(cloudData);
+      const restored = unsanitizeKeys(cloudData);
+      const cloudJson = JSON.stringify(restored);
       const localJson = localStorage.getItem(key);
       if (cloudJson !== localJson) {
         localStorage.setItem(key, cloudJson);
