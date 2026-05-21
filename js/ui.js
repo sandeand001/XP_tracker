@@ -571,10 +571,16 @@ function _loadLogState() {
     if (saved) {
       const s = JSON.parse(saved);
       s.visibleCols = new Set(s.visibleCols);
+      // Migrate old single dateFilter to range
+      if (s.dateFilter && !s.dateFrom) {
+        s.dateFrom = s.dateFilter;
+        s.dateTo = s.dateFilter;
+        delete s.dateFilter;
+      }
       return s;
     }
   } catch (e) { /* ignore */ }
-  return { sortNameAsc: true, sortByName: false, visibleCols: new Set(LOG_COLUMNS.map(c => c.key)), dateFilter: '' };
+  return { sortNameAsc: true, sortByName: false, visibleCols: new Set(LOG_COLUMNS.map(c => c.key)), dateFrom: '', dateTo: '' };
 }
 
 function _saveLogState() {
@@ -590,10 +596,14 @@ function _getFilteredSortedLog() {
   const log = Store.getXPLog();
   let entries = [...log];
 
-  // Filter by date
-  const df = (logState.dateFilter || '').trim();
-  if (df) {
-    entries = entries.filter(e => (e.date || '') === df);
+  // Filter by date range
+  const from = (logState.dateFrom || '').trim();
+  const to = (logState.dateTo || '').trim();
+  if (from) {
+    entries = entries.filter(e => (e.date || '') >= from);
+  }
+  if (to) {
+    entries = entries.filter(e => (e.date || '') <= to);
   }
 
   // Sort by student name or default reverse-chronological
@@ -606,7 +616,7 @@ function _getFilteredSortedLog() {
     entries.reverse();
   }
 
-  return entries.slice(0, 200);
+  return entries;
 }
 
 function _renderLogBody() {
@@ -708,14 +718,70 @@ export function initLogColumnSelector() {
 }
 
 export function initLogDateFilter() {
-  const input = document.getElementById('log-date-filter');
-  if (!input) return;
-  input.value = logState.dateFilter || '';
-  input.addEventListener('change', () => {
-    logState.dateFilter = input.value;
+  const fromInput = document.getElementById('log-date-from');
+  const toInput = document.getElementById('log-date-to');
+  const clearBtn = document.getElementById('btn-clear-date-filter');
+  if (!fromInput || !toInput) return;
+  fromInput.value = logState.dateFrom || '';
+  toInput.value = logState.dateTo || '';
+  fromInput.addEventListener('change', () => {
+    logState.dateFrom = fromInput.value;
     _saveLogState();
     _renderLogBody();
+    _renderLogSummary();
   });
+  toInput.addEventListener('change', () => {
+    logState.dateTo = toInput.value;
+    _saveLogState();
+    _renderLogBody();
+    _renderLogSummary();
+  });
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      logState.dateFrom = '';
+      logState.dateTo = '';
+      fromInput.value = '';
+      toInput.value = '';
+      _saveLogState();
+      _renderLogBody();
+      _renderLogSummary();
+    });
+  }
+}
+
+function _renderLogSummary() {
+  const el = document.getElementById('log-summary');
+  if (!el) return;
+  const entries = _getFilteredSortedLog();
+  if (entries.length === 0) {
+    el.classList.add('hidden');
+    return;
+  }
+  // Collect unique dates and per-student totals
+  const dateSet = new Set();
+  const studentTotals = {};
+  let totalXP = 0;
+  for (const e of entries) {
+    if (e.date) dateSet.add(e.date);
+    totalXP += (e.dailyTotalRaw || 0);
+    const name = e.student || 'Unknown';
+    if (!studentTotals[name]) studentTotals[name] = { xp: 0, days: 0 };
+    studentTotals[name].xp += (e.dailyTotalRaw || 0);
+    studentTotals[name].days += 1;
+  }
+  const numDays = dateSet.size;
+  const numStudents = Object.keys(studentTotals).length;
+  const avgPerStudentPerDay = numDays > 0 && numStudents > 0
+    ? (totalXP / numStudents / numDays).toFixed(1)
+    : '—';
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <span><strong>${entries.length}</strong> entries</span>
+    <span><strong>${numDays}</strong> school days</span>
+    <span><strong>${numStudents}</strong> students</span>
+    <span>Total XP earned: <strong>${totalXP}</strong></span>
+    <span>Avg daily XP / student: <strong>${avgPerStudentPerDay}</strong></span>
+  `;
 }
 
 export function renderLog() {
@@ -723,9 +789,11 @@ export function renderLog() {
   const visCols = _getVisibleCols();
   thead.innerHTML = '';
 
-  // Sync date filter input
-  const dateInput = document.getElementById('log-date-filter');
-  if (dateInput) dateInput.value = logState.dateFilter || '';
+  // Sync date filter inputs
+  const fromInput = document.getElementById('log-date-from');
+  const toInput = document.getElementById('log-date-to');
+  if (fromInput) fromInput.value = logState.dateFrom || '';
+  if (toInput) toInput.value = logState.dateTo || '';
 
   // Header row — only Student column is sortable (by name)
   const headerRow = document.createElement('tr');
@@ -759,6 +827,7 @@ export function renderLog() {
 
   _renderLogBody();
   _renderColumnSelector();
+  _renderLogSummary();
 }
 
 // ── Settings view ──

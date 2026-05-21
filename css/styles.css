@@ -369,6 +369,25 @@ tbody tr:hover { background: rgba(124,77,255,0.1); }
 .log-date-filter input[type="date"]:focus {
   border-color: var(--accent-purple);
 }
+.log-date-filter .btn-xs {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+  margin-left: 0.25rem;
+}
+
+/* ── Log summary bar ── */
+.log-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.5rem;
+  background: rgba(124,77,255,0.08);
+  border: 1px solid rgba(124,77,255,0.2);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
 
 /* ── Column selector dropdown ── */
 .log-col-selector-wrap {

@@ -238,7 +238,9 @@
       <div class="tab-header">
         <h2>📜 XP Log</h2>
         <div class="tab-actions">
-          <label class="log-date-filter">📅 <input type="date" id="log-date-filter" /></label>
+          <label class="log-date-filter">📅 From <input type="date" id="log-date-from" /> To <input type="date" id="log-date-to" />
+            <button id="btn-clear-date-filter" class="btn btn-xs" title="Clear date filter">✕</button>
+          </label>
           <div class="log-col-selector-wrap">
             <button id="btn-col-selector" class="btn btn-secondary">🔧 Columns</button>
             <div id="col-selector-dropdown" class="col-selector-dropdown hidden"></div>
@@ -247,6 +249,7 @@
           <button id="btn-clear-log" class="btn btn-danger">🗑️ Clear Log</button>
         </div>
       </div>
+      <div id="log-summary" class="log-summary hidden"></div>
       <div class="table-wrap">
         <table id="log-table">
           <thead id="log-thead"></thead>
