@@ -389,8 +389,9 @@ tbody tr:hover { background: rgba(124,77,255,0.1); }
   color: var(--ink);
 }
 
-/* ── Column selector dropdown ── */
-.log-col-selector-wrap {
+/* ── Column & student selector dropdowns ── */
+.log-col-selector-wrap,
+.log-student-selector-wrap {
   position: relative;
   display: inline-block;
 }

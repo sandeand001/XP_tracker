@@ -443,6 +443,7 @@ async function initApp() {
   initLogButtons();
   UI.initLogColumnSelector();
   UI.initLogDateFilter();
+  UI.initLogStudentFilter();
   initSettingsButtons();
 
   // ── Nav link clicks ──

@@ -577,14 +577,15 @@ function _loadLogState() {
         s.dateTo = s.dateFilter;
         delete s.dateFilter;
       }
+      if (!s.studentFilter) s.studentFilter = [];
       return s;
     }
   } catch (e) { /* ignore */ }
-  return { sortNameAsc: true, sortByName: false, visibleCols: new Set(LOG_COLUMNS.map(c => c.key)), dateFrom: '', dateTo: '' };
+  return { sortNameAsc: true, sortByName: false, visibleCols: new Set(LOG_COLUMNS.map(c => c.key)), dateFrom: '', dateTo: '', studentFilter: [] };
 }
 
 function _saveLogState() {
-  const s = { ...logState, visibleCols: [...logState.visibleCols] };
+  const s = { ...logState, visibleCols: [...logState.visibleCols], studentFilter: [...(logState.studentFilter || [])] };
   localStorage.setItem('xp_log_view_state', JSON.stringify(s));
 }
 
@@ -604,6 +605,13 @@ function _getFilteredSortedLog() {
   }
   if (to) {
     entries = entries.filter(e => (e.date || '') <= to);
+  }
+
+  // Filter by student
+  const sf = logState.studentFilter || [];
+  if (sf.length > 0) {
+    const allowed = new Set(sf);
+    entries = entries.filter(e => allowed.has(e.student || ''));
   }
 
   // Sort by student name or default reverse-chronological
@@ -717,6 +725,91 @@ export function initLogColumnSelector() {
   });
 }
 
+export function initLogStudentFilter() {
+  const btn = document.getElementById('btn-student-filter');
+  const dropdown = document.getElementById('student-filter-dropdown');
+  if (!btn || !dropdown) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _renderStudentFilterDropdown();
+    dropdown.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target) && e.target !== btn) {
+      dropdown.classList.add('hidden');
+    }
+  });
+}
+
+function _renderStudentFilterDropdown() {
+  const dropdown = document.getElementById('student-filter-dropdown');
+  if (!dropdown) return;
+  dropdown.innerHTML = '';
+
+  // Get all unique student names from the log
+  const log = Store.getXPLog();
+  const names = [...new Set(log.map(e => e.student || ''))].filter(Boolean).sort();
+  const selected = new Set(logState.studentFilter || []);
+
+  // Select All / Deselect All
+  const btnRow = document.createElement('div');
+  btnRow.classList.add('col-selector-btn-row');
+  const btnAll = document.createElement('button');
+  btnAll.textContent = 'Select All';
+  btnAll.classList.add('btn', 'btn-xs');
+  btnAll.addEventListener('click', () => {
+    logState.studentFilter = [...names];
+    _saveLogState();
+    _renderStudentFilterDropdown();
+    _renderLogBody();
+    _renderLogSummary();
+    _updateStudentFilterBadge();
+  });
+  const btnNone = document.createElement('button');
+  btnNone.textContent = 'Clear';
+  btnNone.classList.add('btn', 'btn-xs');
+  btnNone.addEventListener('click', () => {
+    logState.studentFilter = [];
+    _saveLogState();
+    _renderStudentFilterDropdown();
+    _renderLogBody();
+    _renderLogSummary();
+    _updateStudentFilterBadge();
+  });
+  btnRow.appendChild(btnAll);
+  btnRow.appendChild(btnNone);
+  dropdown.appendChild(btnRow);
+
+  for (const name of names) {
+    const label = document.createElement('label');
+    label.classList.add('col-selector-item');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = selected.has(name);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!logState.studentFilter.includes(name)) logState.studentFilter.push(name);
+      } else {
+        logState.studentFilter = logState.studentFilter.filter(n => n !== name);
+      }
+      _saveLogState();
+      _renderLogBody();
+      _renderLogSummary();
+      _updateStudentFilterBadge();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + name));
+    dropdown.appendChild(label);
+  }
+}
+
+function _updateStudentFilterBadge() {
+  const btn = document.getElementById('btn-student-filter');
+  if (!btn) return;
+  const count = (logState.studentFilter || []).length;
+  btn.textContent = count > 0 ? `👤 Students (${count})` : '👤 Students';
+}
+
 export function initLogDateFilter() {
   const fromInput = document.getElementById('log-date-from');
   const toInput = document.getElementById('log-date-to');
@@ -828,6 +921,7 @@ export function renderLog() {
   _renderLogBody();
   _renderColumnSelector();
   _renderLogSummary();
+  _updateStudentFilterBadge();
 }
 
 // ── Settings view ──
