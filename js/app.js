@@ -276,7 +276,14 @@ function initLogButtons() {
 // ── Settings buttons ──
 function initSettingsButtons() {
   document.getElementById('btn-save-config').addEventListener('click', () => {
+    const oldDifficulty = Store.getConfig().LEVEL_DIFFICULTY || 'normal';
     UI.saveSettingsFromDOM();
+    const newDifficulty = Store.getConfig().LEVEL_DIFFICULTY || 'normal';
+    if (newDifficulty !== oldDifficulty) {
+      Engine.remapXPForDifficulty(oldDifficulty, newDifficulty);
+    }
+    Engine.recomputeAllProgress();
+    UI.renderTracker();
     UI.toast('Configuration saved!', 'success');
   });
 

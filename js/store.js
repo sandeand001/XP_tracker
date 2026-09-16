@@ -64,6 +64,47 @@ export function updateStudent(name, updates) {
   saveStudents(students);
 }
 
+// Rename a student everywhere their name is used as a key
+export function renameStudent(oldName, newName) {
+  oldName = (oldName || '').trim();
+  newName = (newName || '').trim();
+  if (!newName) throw new Error('Name cannot be empty');
+  if (oldName === newName) return true;
+
+  const students = getStudents();
+  if (students.some(s => s.name === newName)) throw new Error('A student with that name already exists');
+  const idx = students.findIndex(s => s.name === oldName);
+  if (idx === -1) throw new Error('Student not found');
+
+  students[idx].name = newName;
+  saveStudents(students);
+
+  // XP log entries reference students by name
+  const log = getXPLog();
+  let logChanged = false;
+  for (const entry of log) {
+    if (entry.student === oldName) { entry.student = newName; logChanged = true; }
+  }
+  if (logChanged) saveXPLog(log);
+
+  // Daily and behavior states are keyed by student name
+  const daily = getDailyState();
+  if (Object.prototype.hasOwnProperty.call(daily, oldName)) {
+    daily[newName] = daily[oldName];
+    delete daily[oldName];
+    saveDailyState(daily);
+  }
+
+  const behavior = getBehaviorState();
+  if (Object.prototype.hasOwnProperty.call(behavior, oldName)) {
+    behavior[newName] = behavior[oldName];
+    delete behavior[oldName];
+    saveBehaviorState(behavior);
+  }
+
+  return true;
+}
+
 // ── XP Log ──
 export function getXPLog() { return load(KEYS.XP_LOG, []); }
 export function saveXPLog(log) { save(KEYS.XP_LOG, log); }
@@ -120,6 +161,7 @@ function require_config() {
     DEFAULT_CONFIG: {
       XP_CAP: 50,
       EXCHANGE_RATE: 20,
+      LEVEL_DIFFICULTY: 'normal',
       DAILY_WEIGHTS: {
         quiz: 10, faculty: 5, exitTicket: 5, writing: 5,
         kindness: 5, expectations: 10, participationEach: 2

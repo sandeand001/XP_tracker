@@ -2,35 +2,39 @@
 // engine.js — Core XP processing, level calcs, debt, coins
 // ============================================================
 
-import { LEVEL_THRESHOLDS, PRESTIGE_TITLES, BASE_TITLES, TITLE_BADGES, getStreakBadge } from './config.js';
+import { computeLevelThresholds, computePrestigeTitles, BASE_TITLES, TITLE_BADGES, getStreakBadge } from './config.js';
 import * as Store from './store.js';
 
 // ── Level / Title helpers ──
-export function getLevelFromXP(xp) {
-  for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
-    if (xp >= LEVEL_THRESHOLDS[i]) return i + 1;
+export function getLevelThresholds() {
+  return computeLevelThresholds(Store.getConfig().LEVEL_DIFFICULTY);
+}
+
+function getPrestigeTitles() {
+  return computePrestigeTitles(Store.getConfig().LEVEL_DIFFICULTY);
+}
+
+export function getLevelFromXP(xp, thresholds = getLevelThresholds()) {
+  for (let i = thresholds.length - 1; i >= 0; i--) {
+    if (xp >= thresholds[i]) return i + 1;
   }
   return 1;
 }
 
-export function getXPForLevel(level) {
-  if (level < 1 || level >= LEVEL_THRESHOLDS.length) return 0;
-  return LEVEL_THRESHOLDS[level] - LEVEL_THRESHOLDS[level - 1];
+export function getXPForLevel(level, thresholds = getLevelThresholds()) {
+  if (level < 1 || level >= thresholds.length) return 0;
+  return thresholds[level] - thresholds[level - 1];
 }
 
-export function determineTitle(cumXP, level) {
-  for (let i = PRESTIGE_TITLES.length - 1; i >= 0; i--) {
-    if (cumXP >= PRESTIGE_TITLES[i].xp) return PRESTIGE_TITLES[i].title;
+export function determineTitle(cumXP, level, prestige = getPrestigeTitles()) {
+  for (let i = prestige.length - 1; i >= 0; i--) {
+    if (cumXP >= prestige[i].xp) return prestige[i].title;
   }
   return BASE_TITLES[level] || 'Adventurer';
 }
 
 export function getTitleBadge(title) {
   return TITLE_BADGES[title] || '';
-}
-
-export function getLevelThresholds() {
-  return LEVEL_THRESHOLDS;
 }
 
 // ── Compute daily total from checklist state ──
@@ -100,6 +104,8 @@ function getEarnedAndMintedBeforeDate(dateStr) {
 // ── Process Daily XP (the big one) ──
 export function processDailyXP() {
   const cfg = Store.getConfig();
+  const thresholds = computeLevelThresholds(cfg.LEVEL_DIFFICULTY);
+  const prestige = computePrestigeTitles(cfg.LEVEL_DIFFICULTY);
   const students = Store.getStudents();
   const dailyState = Store.getDailyState();
   const behaviorState = Store.getBehaviorState();
@@ -166,15 +172,15 @@ export function processDailyXP() {
     // Update cumulative XP
     const prevLevel = student.level || 1;
     student.cumXP = (student.cumXP || 0) + xpTowardLevel;
-    student.level = getLevelFromXP(student.cumXP);
+    student.level = getLevelFromXP(student.cumXP, thresholds);
     student.xpDebt = totalDebt;
 
-    const baseXP = LEVEL_THRESHOLDS[student.level - 1];
+    const baseXP = thresholds[student.level - 1];
     student.xpInLevel = student.cumXP - baseXP;
-    const xpForLevel = getXPForLevel(student.level);
+    const xpForLevel = getXPForLevel(student.level, thresholds);
     student.xpToNext = xpForLevel === 0 ? 0 : Math.max(0, xpForLevel - student.xpInLevel);
     student.progress = xpForLevel === 0 ? 1 : (student.xpInLevel / xpForLevel);
-    student.title = determineTitle(student.cumXP, student.level);
+    student.title = determineTitle(student.cumXP, student.level, prestige);
 
     if (student.level > prevLevel) {
       levelUps.push({ name: student.name, newLevel: student.level, title: student.title });
@@ -227,14 +233,51 @@ export function processDailyXP() {
 // ── Recompute all levels/progress from stored cumXP ──
 export function recomputeAllProgress() {
   const students = Store.getStudents();
+  const cfg = Store.getConfig();
+  const thresholds = computeLevelThresholds(cfg.LEVEL_DIFFICULTY);
+  const prestige = computePrestigeTitles(cfg.LEVEL_DIFFICULTY);
   for (const s of students) {
-    s.level = getLevelFromXP(s.cumXP || 0);
-    const baseXP = LEVEL_THRESHOLDS[s.level - 1];
+    s.level = getLevelFromXP(s.cumXP || 0, thresholds);
+    const baseXP = thresholds[s.level - 1];
     s.xpInLevel = (s.cumXP || 0) - baseXP;
-    const xpForLevel = getXPForLevel(s.level);
+    const xpForLevel = getXPForLevel(s.level, thresholds);
     s.xpToNext = xpForLevel === 0 ? 0 : Math.max(0, xpForLevel - s.xpInLevel);
     s.progress = xpForLevel === 0 ? 1 : (s.xpInLevel / xpForLevel);
-    s.title = determineTitle(s.cumXP || 0, s.level);
+    s.title = determineTitle(s.cumXP || 0, s.level, prestige);
+  }
+  Store.saveStudents(students);
+  return students.length;
+}
+
+// Remap stored cumXP on a difficulty change so each student keeps their exact
+// level and relative progress-in-level. Only the future pace changes; students
+// see no shift in level or progress bar.
+export function remapXPForDifficulty(oldKey, newKey) {
+  if (oldKey === newKey) return 0;
+  const oldTh = computeLevelThresholds(oldKey);
+  const newTh = computeLevelThresholds(newKey);
+  const maxLevel = oldTh.length;
+  const students = Store.getStudents();
+  for (const s of students) {
+    const cumXP = s.cumXP || 0;
+    const level = getLevelFromXP(cumXP, oldTh);
+    let newCum;
+    if (level < maxLevel) {
+      const oldBase = oldTh[level - 1];
+      const oldSpan = oldTh[level] - oldBase;
+      const frac = oldSpan > 0 ? (cumXP - oldBase) / oldSpan : 0;
+      const newBase = newTh[level - 1];
+      newCum = Math.round(newBase + frac * (newTh[level] - newBase));
+      if (newCum >= newTh[level]) newCum = newTh[level] - 1; // stay within the same band
+      if (newCum < newBase) newCum = newBase;
+    } else {
+      // Top level: scale overflow so prestige standing is preserved too
+      const oldBase = oldTh[maxLevel - 1];
+      const newBase = newTh[maxLevel - 1];
+      const ratio = oldBase > 0 ? newBase / oldBase : 1;
+      newCum = Math.round(newBase + (cumXP - oldBase) * ratio);
+    }
+    s.cumXP = newCum;
   }
   Store.saveStudents(students);
   return students.length;

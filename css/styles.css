@@ -1006,6 +1006,15 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 .setting-row label { font-size: 0.88rem; font-weight: 500; flex: 1; color: #d8cff0; }
 .setting-row input { width: 80px; padding: 0.3rem 0.4rem; border: 1px solid rgba(124,77,255,0.2); border-radius: 4px; text-align: center; background: rgba(16,12,36,0.6); color: #d8cff0; }
 
+.difficulty-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: #9d92c0;
+  margin-top: 0.15rem;
+}
+#difficulty-summary strong { color: var(--accent-purple-light); }
+
 .import-section {
   margin: 1rem 0;
   padding: 0.75rem;

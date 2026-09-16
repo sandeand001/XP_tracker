@@ -2,7 +2,7 @@
 // ui.js — All view rendering functions
 // ============================================================
 
-import { GUILDS, getRankBadge, TITLE_BADGES } from './config.js';
+import { GUILDS, getRankBadge, TITLE_BADGES, DIFFICULTY_LEVELS, computeLevelThresholds } from './config.js';
 import * as Store from './store.js';
 import * as Engine from './engine.js';
 
@@ -146,7 +146,11 @@ export function renderTracker() {
       showModal(`✏️ Edit — ${name}`, `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
           <div>
-            <label><strong>Cumulative XP:</strong></label>
+            <label><strong>Name:</strong></label>
+            <input type="text" id="edit-name" value="${esc(student.name)}" style="width:100%" />
+            <p class="help-text" style="margin-top:0.25rem">Fix a misspelling here. Updates the name across the log and all trackers.</p>
+
+            <label style="margin-top:0.75rem"><strong>Cumulative XP:</strong></label>
             <input type="number" id="edit-cum-xp" min="0" value="${student.cumXP || 0}" style="width:100%" />
             <p class="help-text" style="margin-top:0.25rem">Total XP earned all-time. Changing this recalculates level & title.</p>
 
@@ -166,13 +170,27 @@ export function renderTracker() {
         {
           label: '💾 Save Changes',
           class: 'btn-primary',
+          close: false,
           action: () => {
+            const newName = document.getElementById('edit-name').value.trim();
             const newXP = Math.max(0, Number(document.getElementById('edit-cum-xp').value) || 0);
             const newDebt = Math.min(0, Number(document.getElementById('edit-xp-debt').value) || 0);
-            Store.updateStudent(name, { cumXP: newXP, xpDebt: newDebt });
+            if (!newName) { toast('Name cannot be empty', 'error'); return; }
+            let effectiveName = name;
+            if (newName !== name) {
+              try {
+                Store.renameStudent(name, newName);
+                effectiveName = newName;
+              } catch (err) {
+                toast(err.message, 'error');
+                return;
+              }
+            }
+            Store.updateStudent(effectiveName, { cumXP: newXP, xpDebt: newDebt });
             Engine.recomputeAllProgress();
             renderTracker();
-            toast(`${name} updated — ${newXP} XP, Debt: ${newDebt}`, 'success');
+            closeModal();
+            toast(`${effectiveName} updated — ${newXP} XP, Debt: ${newDebt}`, 'success');
           }
         },
         { label: 'Cancel', class: 'btn-secondary', action: () => {} }
@@ -946,12 +964,37 @@ export function renderSettings() {
   document.getElementById('cfg-repeat').value = cfg.BEHAVIOR_PENALTIES?.repeat ?? -20;
   document.getElementById('cfg-serious').value = cfg.BEHAVIOR_PENALTIES?.serious ?? -25;
   document.getElementById('cfg-severe').value = cfg.BEHAVIOR_PENALTIES?.severe ?? -30;
+
+  const slider = document.getElementById('cfg-difficulty');
+  if (slider) {
+    const idx = DIFFICULTY_LEVELS.findIndex(d => d.key === (cfg.LEVEL_DIFFICULTY || 'normal'));
+    slider.value = idx === -1 ? 2 : idx;
+    if (!slider.dataset.wired) {
+      slider.addEventListener('input', _updateDifficultySummary);
+      slider.dataset.wired = '1';
+    }
+  }
+  _updateDifficultySummary();
+}
+
+function _updateDifficultySummary() {
+  const slider = document.getElementById('cfg-difficulty');
+  const summary = document.getElementById('difficulty-summary');
+  if (!slider || !summary) return;
+  const preset = DIFFICULTY_LEVELS[Number(slider.value)] || DIFFICULTY_LEVELS[2];
+  const th = computeLevelThresholds(preset.key);
+  const l10 = th[th.length - 1];
+  const breakdown = th.slice(1).map((x, i) => `L${i + 2}&nbsp;${x.toLocaleString()}`).join(' · ');
+  summary.innerHTML = `<strong>${preset.label}</strong> — Level 10 at <strong>${l10.toLocaleString()} XP</strong>.<br>${breakdown}`;
 }
 
 export function saveSettingsFromDOM() {
+  const diffIdx = Number(document.getElementById('cfg-difficulty')?.value);
+  const diffKey = (DIFFICULTY_LEVELS[diffIdx] || DIFFICULTY_LEVELS[2]).key;
   const cfg = {
     XP_CAP: Number(document.getElementById('cfg-xp-cap').value) || 50,
     EXCHANGE_RATE: Number(document.getElementById('cfg-exchange-rate').value) || 20,
+    LEVEL_DIFFICULTY: diffKey,
     DAILY_WEIGHTS: {
       quiz: Number(document.getElementById('cfg-quiz').value) || 0,
       faculty: Number(document.getElementById('cfg-faculty').value) || 0,
