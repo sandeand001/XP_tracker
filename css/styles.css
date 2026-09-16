@@ -974,6 +974,13 @@ select.guild-select option[value="Guild 3"] { color: var(--guild-purple); }
 #currency-table { max-width: 800px; }
 .currency-balance { font-weight: 700; color: var(--success); font-size: 1.05rem; }
 .currency-spent { color: var(--danger); }
+.currency-today-col {
+  font-weight: 700;
+  color: #ffd54f;
+  font-size: 1.05rem;
+  background: rgba(255, 213, 79, 0.12);
+  box-shadow: inset 3px 0 0 #ffd54f, inset -1px 0 0 rgba(255, 213, 79, 0.4);
+}
 .spend-input-group { display: flex; gap: 0.3rem; align-items: center; }
 .spend-input-group input[type="number"] { width: 60px; }
 .spend-input-group input[type="text"] { width: 100px; }

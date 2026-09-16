@@ -209,6 +209,21 @@ export function getCurrencyBalances() {
   return balances;
 }
 
+// Coins minted for today's date (populated after Process Daily XP runs)
+export function getCoinsEarnedToday() {
+  const today = todayStr();
+  const log = getXPLog();
+  const earned = {};
+  for (const entry of log) {
+    if (entry.date !== today) continue;
+    const name = entry.student;
+    if (!name) continue;
+    const coins = Number(entry.currencyGain) || 0;
+    if (coins > 0) earned[name] = (earned[name] || 0) + coins;
+  }
+  return earned;
+}
+
 export function getSpendTransactions() {
   return getXPLog().filter(e => (Number(e.currencyGain) || 0) < 0).map(e => ({
     date: e.date,

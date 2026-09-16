@@ -512,6 +512,7 @@ export function renderLeaderboard() {
 export function renderCurrency() {
   const students = Store.getStudents();
   const balances = Store.getCurrencyBalances();
+  const earnedToday = Store.getCoinsEarnedToday();
   const tbody = document.getElementById('currency-body');
   tbody.innerHTML = '';
 
@@ -521,6 +522,7 @@ export function renderCurrency() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td class="text-center currency-today-col">${earnedToday[s.name] || 0}</td>
       <td><strong>${esc(s.name)}</strong></td>
       <td class="text-center">${bal.earned}</td>
       <td class="text-center currency-spent">${bal.spent}</td>
