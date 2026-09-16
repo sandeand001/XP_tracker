@@ -3,6 +3,7 @@
 // ============================================================
 
 import { pushToCloud, removeFromCloud, clearCloud, showSyncing } from './firebase-sync.js';
+import { DEFAULT_CONFIG, TZ } from './config.js';
 
 const KEYS = {
   STUDENTS: 'xp_students',
@@ -13,6 +14,7 @@ const KEYS = {
   COMMENTS: 'xp_comments',
   THEME: 'xp_theme',
   LAYOUT: 'xp_layout',
+  PROCESS_SNAPSHOT: 'xp_process_snapshot',
 };
 
 // ── Generic helpers ──
@@ -129,8 +131,7 @@ export function clearXPLog() { saveXPLog([]); }
 
 // ── Config ──
 export function getConfig() {
-  const { DEFAULT_CONFIG } = require_config();
-  return load(KEYS.CONFIG, { ...DEFAULT_CONFIG });
+  return deepMerge(DEFAULT_CONFIG, load(KEYS.CONFIG, {}));
 }
 export function saveConfig(cfg) { save(KEYS.CONFIG, cfg); }
 
@@ -154,25 +155,21 @@ export function saveLayout(layoutId) {
   showSyncing();
 }
 
-// Lazy import workaround since this is a module
-function require_config() {
-  // We'll inline the defaults here to avoid circular deps
-  return {
-    DEFAULT_CONFIG: {
-      XP_CAP: 50,
-      EXCHANGE_RATE: 20,
-      LEVEL_DIFFICULTY: 'normal',
-      DAILY_WEIGHTS: {
-        quiz: 10, faculty: 5, exitTicket: 5, writing: 5,
-        kindness: 5, expectations: 10, participationEach: 2
-      },
-      BEHAVIOR_PENALTIES: {
-        minor: -5, warning: -10, disrupt: -15,
-        repeat: -20, serious: -25, severe: -30
-      },
-      TEST_SCORE_XP: { 0: 0, 1: 10, 2: 15, 3: 20, 4: 25 }
+// Deep-merge stored config over defaults so existing users still receive
+// any newly-added config keys (nested objects merged, arrays/primitives replaced).
+function deepMerge(base, override) {
+  if (Array.isArray(base) || typeof base !== 'object' || base === null) {
+    return override === undefined ? base : override;
+  }
+  const out = { ...base };
+  if (override && typeof override === 'object') {
+    for (const [k, v] of Object.entries(override)) {
+      out[k] = (v && typeof v === 'object' && !Array.isArray(v) && base[k] && typeof base[k] === 'object')
+        ? deepMerge(base[k], v)
+        : v;
     }
-  };
+  }
+  return out;
 }
 
 // ── Daily / Behavior State (for current day, pre-process) ──
@@ -188,6 +185,36 @@ export function saveBehaviorState(state) { save(KEYS.BEHAVIOR_STATE, state); }
 export function clearBehaviorState() {
   localStorage.removeItem(KEYS.BEHAVIOR_STATE);
   removeFromCloud(KEYS.BEHAVIOR_STATE);
+}
+
+// ── Process snapshot (device-local, for Undo Last Process; not cloud-synced) ──
+export function saveProcessSnapshot(snap) {
+  localStorage.setItem(KEYS.PROCESS_SNAPSHOT, JSON.stringify(snap));
+}
+export function getProcessSnapshot() {
+  try {
+    const raw = localStorage.getItem(KEYS.PROCESS_SNAPSHOT);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+export function clearProcessSnapshot() {
+  localStorage.removeItem(KEYS.PROCESS_SNAPSHOT);
+}
+
+// Whether Daily XP has already been processed for today (process entries carry
+// levelAfter > 0; spend entries use levelAfter 0, so they don't count).
+export function hasProcessedToday() {
+  const today = todayStr();
+  return getXPLog().some(e => e.date === today && (Number(e.levelAfter) || 0) > 0);
+}
+
+// Most recent date on which Daily XP was processed, or null if never.
+export function getLastProcessedDate() {
+  let last = null;
+  for (const e of getXPLog()) {
+    if ((Number(e.levelAfter) || 0) > 0 && e.date && (last === null || e.date > last)) last = e.date;
+  }
+  return last;
 }
 
 // ── Comments ──
@@ -312,17 +339,19 @@ export function parseCSV(text) {
   return { headers, rows };
 }
 
+// Find a CSV column index by case-insensitive partial header match
+function findColumn(headers, patterns) {
+  for (const p of patterns) {
+    const idx = headers.findIndex(h => h.toLowerCase().includes(p.toLowerCase()));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
 // Import students from XP Tracker CSV
 export function importStudentsFromCSV(text) {
   const { headers, rows } = parseCSV(text);
-  // Try to find columns by name (case-insensitive partial match)
-  const find = (patterns) => {
-    for (const p of patterns) {
-      const idx = headers.findIndex(h => h.toLowerCase().includes(p.toLowerCase()));
-      if (idx !== -1) return idx;
-    }
-    return -1;
-  };
+  const find = (patterns) => findColumn(headers, patterns);
 
   const iName = find(['name']);
   const iTitle = find(['title']);
@@ -356,13 +385,7 @@ export function importStudentsFromCSV(text) {
 // Import XP Log from CSV
 export function importXPLogFromCSV(text) {
   const { headers, rows } = parseCSV(text);
-  const find = (patterns) => {
-    for (const p of patterns) {
-      const idx = headers.findIndex(h => h.toLowerCase().includes(p.toLowerCase()));
-      if (idx !== -1) return idx;
-    }
-    return -1;
-  };
+  const find = (patterns) => findColumn(headers, patterns);
 
   const iDate = find(['date']);
   const iStudent = find(['student', 'name']);
@@ -422,6 +445,8 @@ export function exportXPLogAsCSV() {
 
 // ── Helpers ──
 export function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // en-CA yields YYYY-MM-DD; TZ keeps "today" consistent regardless of device clock
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
 }

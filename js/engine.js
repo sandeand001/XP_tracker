@@ -102,6 +102,89 @@ function getEarnedAndMintedBeforeDate(dateStr) {
 }
 
 // ── Process Daily XP (the big one) ──
+
+// Read the shared bonus / extra-penalty values stored globally on the state
+function readGlobals(dailyState, behaviorState) {
+  return {
+    bonusAVal: Number(dailyState._bonusA) || 0,
+    bonusBVal: Number(dailyState._bonusB) || 0,
+    bonusCVal: Number(dailyState._bonusC) || 0,
+    bonusDVal: Number(dailyState._bonusD) || 0,
+    extraAVal: Number(behaviorState._extraA) || 0,
+    extraBVal: Number(behaviorState._extraB) || 0,
+    extraCVal: Number(behaviorState._extraC) || 0,
+  };
+}
+
+// Build a student's daily/behavior inputs with the global bonus values injected (copies, no mutation)
+function studentInputs(dailyState, behaviorState, g, name) {
+  const ds = { ...(dailyState[name] || {}), bonusAVal: g.bonusAVal, bonusBVal: g.bonusBVal, bonusCVal: g.bonusCVal, bonusDVal: g.bonusDVal };
+  const bs = { ...(behaviorState[name] || {}), extraAVal: g.extraAVal, extraBVal: g.extraBVal, extraCVal: g.extraCVal };
+  return { ds, bs };
+}
+
+// Pure calculation of one student's daily result — shared by preview and process
+function computeStudentDelta(student, ds, bs, cfg, thresholds, prestige, prior) {
+  const earnedXP = computeDailyTotal(ds, cfg);
+  const behaviorDebtDelta = computeBehaviorDebt(bs, cfg);
+  let totalDebt = (student.xpDebt || 0) + behaviorDebtDelta;
+  let xpRemaining = earnedXP;
+  let debtApplied = 0;
+  if (totalDebt < 0 && xpRemaining > 0) {
+    const pay = Math.min(xpRemaining, -totalDebt);
+    totalDebt += pay; xpRemaining -= pay; debtApplied = pay;
+  }
+  const xpToLevel = Math.min(xpRemaining, cfg.XP_CAP);
+  const overflowXP = Math.max(0, xpRemaining - cfg.XP_CAP);
+  const prev = prior[student.name] || { applied: 0, minted: 0 };
+  const currencyGain = Math.max(0,
+    Math.floor((prev.applied + xpToLevel) / cfg.EXCHANGE_RATE) - prev.minted
+  );
+  const cumXPAfter = (student.cumXP || 0) + xpToLevel;
+  const levelBefore = student.level || 1;
+  const levelAfter = getLevelFromXP(cumXPAfter, thresholds);
+  const titleAfter = determineTitle(cumXPAfter, levelAfter, prestige);
+  let partCount = 0;
+  for (let i = 1; i <= 5; i++) if (ds[`part${i}`]) partCount++;
+  return {
+    earnedXP, behaviorDebtDelta, debtApplied, xpToLevel, overflowXP, currencyGain,
+    debtAfter: totalDebt, cumXPAfter, levelBefore, levelAfter, titleAfter, partCount,
+    dailyComment: (ds.comment || '').trim(), behaviorComment: (bs.comment || '').trim()
+  };
+}
+
+// Read-only preview of what Process Daily XP would produce (no state changes)
+export function previewDailyXP() {
+  const cfg = Store.getConfig();
+  const thresholds = computeLevelThresholds(cfg.LEVEL_DIFFICULTY);
+  const prestige = computePrestigeTitles(cfg.LEVEL_DIFFICULTY);
+  const students = Store.getStudents();
+  const dailyState = Store.getDailyState();
+  const behaviorState = Store.getBehaviorState();
+  const dateStr = Store.todayStr();
+  const prior = getEarnedAndMintedBeforeDate(dateStr);
+  const g = readGlobals(dailyState, behaviorState);
+
+  return students.map(student => {
+    const { ds, bs } = studentInputs(dailyState, behaviorState, g, student.name);
+    const d = computeStudentDelta(student, ds, bs, cfg, thresholds, prestige, prior);
+    return {
+      name: student.name,
+      earnedXP: d.earnedXP,
+      debtApplied: d.debtApplied,
+      xpToLevel: d.xpToLevel,
+      overflowXP: d.overflowXP,
+      coins: d.currencyGain,
+      debtAfter: d.debtAfter,
+      levelBefore: d.levelBefore,
+      levelAfter: d.levelAfter,
+      titleAfter: d.titleAfter,
+      levelUp: d.levelAfter > d.levelBefore,
+      changed: d.earnedXP > 0 || d.behaviorDebtDelta !== 0 || !!d.dailyComment || !!d.behaviorComment
+    };
+  });
+}
+
 export function processDailyXP() {
   const cfg = Store.getConfig();
   const thresholds = computeLevelThresholds(cfg.LEVEL_DIFFICULTY);
@@ -112,107 +195,63 @@ export function processDailyXP() {
   const dateStr = Store.todayStr();
   const prior = getEarnedAndMintedBeforeDate(dateStr);
 
+  // Snapshot everything BEFORE mutating so Undo Last Process can fully restore
+  Store.saveProcessSnapshot({
+    date: dateStr,
+    timestamp: Date.now(),
+    students: JSON.parse(JSON.stringify(students)),
+    xpLog: JSON.parse(JSON.stringify(Store.getXPLog())),
+    dailyState: JSON.parse(JSON.stringify(dailyState)),
+    behaviorState: JSON.parse(JSON.stringify(behaviorState)),
+  });
+
+  const g = readGlobals(dailyState, behaviorState);
   const logEntries = [];
   const levelUps = [];
   const guildTotals = {};
   let anyChange = false;
 
-  // Get bonus values from daily state (stored globally)
-  const bonusAVal = Number(dailyState._bonusA) || 0;
-  const bonusBVal = Number(dailyState._bonusB) || 0;
-  const bonusCVal = Number(dailyState._bonusC) || 0;
-  const bonusDVal = Number(dailyState._bonusD) || 0;
-
-  // Extra penalty values
-  const extraAVal = Number(behaviorState._extraA) || 0;
-  const extraBVal = Number(behaviorState._extraB) || 0;
-  const extraCVal = Number(behaviorState._extraC) || 0;
-
   for (const student of students) {
-    const ds = dailyState[student.name] || {};
-    const bs = behaviorState[student.name] || {};
+    const { ds, bs } = studentInputs(dailyState, behaviorState, g, student.name);
+    const d = computeStudentDelta(student, ds, bs, cfg, thresholds, prestige, prior);
 
-    // Inject bonus values
-    ds.bonusAVal = bonusAVal;
-    ds.bonusBVal = bonusBVal;
-    ds.bonusCVal = bonusCVal;
-    ds.bonusDVal = bonusDVal;
-
-    // Inject extra penalty values
-    bs.extraAVal = extraAVal;
-    bs.extraBVal = extraBVal;
-    bs.extraCVal = extraCVal;
-
-    const earnedXP = computeDailyTotal(ds, cfg);
-    const behaviorDebtDelta = computeBehaviorDebt(bs, cfg);
-    const dailyComment = (ds.comment || '').trim();
-    const behaviorComment = (bs.comment || '').trim();
-
-    // Apply debt payment
-    let totalDebt = (student.xpDebt || 0) + behaviorDebtDelta;
-    let xpRemaining = earnedXP;
-    let debtApplied = 0;
-
-    if (totalDebt < 0 && xpRemaining > 0) {
-      const pay = Math.min(xpRemaining, -totalDebt);
-      totalDebt += pay;
-      xpRemaining -= pay;
-      debtApplied = pay;
-    }
-
-    const xpTowardLevel = Math.min(xpRemaining, cfg.XP_CAP);
-    const xpOverflow = Math.max(0, xpRemaining - cfg.XP_CAP);
-
-    // Currency (carryover rule)
-    const prev = prior[student.name] || { applied: 0, minted: 0 };
-    const currencyGain = Math.max(0,
-      Math.floor((prev.applied + xpTowardLevel) / cfg.EXCHANGE_RATE) - prev.minted
-    );
-
-    // Update cumulative XP
     const prevLevel = student.level || 1;
-    student.cumXP = (student.cumXP || 0) + xpTowardLevel;
-    student.level = getLevelFromXP(student.cumXP, thresholds);
-    student.xpDebt = totalDebt;
-
+    student.cumXP = d.cumXPAfter;
+    student.level = d.levelAfter;
+    student.xpDebt = d.debtAfter;
     const baseXP = thresholds[student.level - 1];
     student.xpInLevel = student.cumXP - baseXP;
     const xpForLevel = getXPForLevel(student.level, thresholds);
     student.xpToNext = xpForLevel === 0 ? 0 : Math.max(0, xpForLevel - student.xpInLevel);
     student.progress = xpForLevel === 0 ? 1 : (student.xpInLevel / xpForLevel);
-    student.title = determineTitle(student.cumXP, student.level, prestige);
+    student.title = d.titleAfter;
 
     if (student.level > prevLevel) {
       levelUps.push({ name: student.name, newLevel: student.level, title: student.title });
     }
 
-    // Participation count for streak tracking
-    let partCount = 0;
-    for (let i = 1; i <= 5; i++) if (ds[`part${i}`]) partCount++;
-
-    const shouldLog = earnedXP > 0 || behaviorDebtDelta !== 0 || dailyComment || behaviorComment;
+    const shouldLog = d.earnedXP > 0 || d.behaviorDebtDelta !== 0 || d.dailyComment || d.behaviorComment;
     if (shouldLog) {
       anyChange = true;
       logEntries.push({
         date: dateStr,
         student: student.name,
-        dailyTotalRaw: earnedXP,
-        debtApplied,
-        xpToLevel: xpTowardLevel,
-        overflowXP: xpOverflow,
-        currencyGain,
-        debtAfter: totalDebt,
+        dailyTotalRaw: d.earnedXP,
+        debtApplied: d.debtApplied,
+        xpToLevel: d.xpToLevel,
+        overflowXP: d.overflowXP,
+        currencyGain: d.currencyGain,
+        debtAfter: d.debtAfter,
         cumXPAfter: student.cumXP,
         levelAfter: student.level,
         titleAfter: student.title,
-        participationCount: partCount,
-        dailyComment,
-        behaviorComment
+        participationCount: d.partCount,
+        dailyComment: d.dailyComment,
+        behaviorComment: d.behaviorComment
       });
 
-      // Guild totals
       if (student.guild) {
-        guildTotals[student.guild] = (guildTotals[student.guild] || 0) + earnedXP;
+        guildTotals[student.guild] = (guildTotals[student.guild] || 0) + d.earnedXP;
       }
     }
   }
@@ -227,8 +266,25 @@ export function processDailyXP() {
   Store.clearDailyState();
   Store.clearBehaviorState();
 
+  // No-op process shouldn't leave an Undo snapshot around
+  if (!anyChange) Store.clearProcessSnapshot();
+
   return { anyChange, levelUps, processedCount: logEntries.length, guildTotals };
 }
+
+// Restore the pre-process state captured by the most recent processDailyXP
+export function undoLastProcess() {
+  const snap = Store.getProcessSnapshot();
+  if (!snap) return false;
+  Store.saveStudents(snap.students || []);
+  Store.saveXPLog(snap.xpLog || []);
+  Store.saveDailyState(snap.dailyState || {});
+  Store.saveBehaviorState(snap.behaviorState || {});
+  Store.clearProcessSnapshot();
+  recomputeAllProgress();
+  return true;
+}
+
 
 // ── Recompute all levels/progress from stored cumXP ──
 export function recomputeAllProgress() {
@@ -341,13 +397,17 @@ export function getRecentLevelUps(days = 3) {
   const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
 
   // Sort log by date asc, then by student
-  const sorted = [...log].sort((a, b) => a.date.localeCompare(b.date) || a.student.localeCompare(b.student));
+  const sorted = [...log].sort((a, b) =>
+    String(a.date || '').localeCompare(String(b.date || '')) ||
+    String(a.student || '').localeCompare(String(b.student || ''))
+  );
 
   // Track each student's previous level to detect changes
   const prevLevel = {};
   const levelUps = [];
 
   for (const entry of sorted) {
+    if (!entry.student || !entry.date) continue;
     const lvl = entry.levelAfter || 1;
     const prev = prevLevel[entry.student];
     if (prev !== undefined && lvl > prev && entry.date >= cutoffStr) {
@@ -363,6 +423,6 @@ export function getRecentLevelUps(days = 3) {
   }
 
   // Sort most recent first
-  levelUps.sort((a, b) => b.date.localeCompare(a.date) || a.student.localeCompare(b.student));
+  levelUps.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.student || '').localeCompare(String(b.student || '')));
   return levelUps;
 }

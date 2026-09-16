@@ -1,0 +1,10 @@
+{
+  "name": "classroom-xp-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RPG-inspired classroom XP tracker (static SPA). Tests run with Node's built-in test runner.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,7 +1,10 @@
 // ============================================================
-// firebase-config.js — Firebase credentials (DO NOT COMMIT)
-// This file is gitignored. Copy firebase-config.example.js
-// and fill in your values if starting fresh.
+// firebase-config.js — Firebase client credentials.
+// NOTE: These are public client identifiers (they ship in every
+// browser). Real access control is enforced by Firebase Realtime
+// Database security rules, which must restrict appData/{uid} to the
+// matching authenticated user. If starting fresh, copy
+// firebase-config.example.js and fill in your own project values.
 // ============================================================
 
 export const FIREBASE_CONFIG = {

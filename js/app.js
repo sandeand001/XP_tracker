@@ -176,31 +176,76 @@ function initProcessXP() {
       return;
     }
 
-    UI.showModal('⚡ Process Daily XP', `
-      <p>This will:</p>
-      <ul style="margin:0.5rem 0 0.5rem 1.5rem">
-        <li>Calculate XP from today's Daily Checklist</li>
-        <li>Apply behavior debt changes</li>
-        <li>Update levels, titles, and coins</li>
-        <li>Log everything and clear inputs</li>
-      </ul>
-      <p style="margin-top:0.75rem"><strong>Ready to process for ${students.length} student(s)?</strong></p>
+    const preview = Engine.previewDailyXP();
+    const changed = preview.filter(p => p.changed);
+    const warning = Store.hasProcessedToday()
+      ? `<div class="process-warning">⚠️ Daily XP was already processed today. Processing again <strong>adds</strong> to today's totals (it does not replace them). Use “↩️ Undo Last Process” on the Tracker to revert if needed.</div>`
+      : '';
+
+    let body;
+    let buttons;
+    if (changed.length === 0) {
+      body = `${warning}<p>No checklist or behavior inputs are marked — there's nothing to process yet.</p>`;
+      buttons = [{ label: 'Close', class: 'btn-secondary', action: () => {} }];
+    } else {
+      const rows = changed.map(p => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td>${p.earnedXP}</td>
+          <td>${p.debtApplied || 0}</td>
+          <td>${p.xpToLevel}</td>
+          <td>${p.coins}</td>
+          <td class="${p.levelUp ? 'pv-levelup' : ''}">Lv.${p.levelBefore}${p.levelUp ? ` → Lv.${p.levelAfter} 🎉` : ''}</td>
+        </tr>`).join('');
+      body = `
+        ${warning}
+        <p>Review what will be applied for <strong>${changed.length}</strong> of ${students.length} student(s):</p>
+        <div style="max-height:340px;overflow:auto">
+          <table class="preview-table">
+            <thead><tr><th>Student</th><th>Earned</th><th>Debt Paid</th><th>Applied</th><th>Coins</th><th>Level</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <p style="margin-top:0.6rem;font-size:0.82rem;color:#9d92c0">Inputs will be logged and cleared. You can undo right after from the Tracker.</p>
+      `;
+      buttons = [
+        {
+          label: '⚡ Process Now',
+          class: 'btn-success',
+          action: () => {
+            const result = Engine.processDailyXP();
+            if (result.levelUps.length) {
+              const names = result.levelUps.map(l => `${l.name} → Lv.${l.newLevel} (${l.title})`).join(', ');
+              UI.toast(`🎉 Level up! ${names}`, 'success');
+            }
+            if (result.processedCount > 0) {
+              UI.toast(`Processed ${result.processedCount} student(s). Undo available on the Tracker.`, 'success');
+            } else {
+              UI.toast('No changes to process (all inputs empty)', 'info');
+            }
+            UI.renderTracker();
+          }
+        },
+        { label: 'Cancel', class: 'btn-secondary', action: () => {} }
+      ];
+    }
+
+    UI.showModal('⚡ Process Daily XP', body, buttons);
+  });
+
+  // ── Undo Last Process ──
+  document.getElementById('btn-undo-process').addEventListener('click', () => {
+    if (!Store.getProcessSnapshot()) { UI.toast('Nothing to undo', 'info'); return; }
+    UI.showModal('↩️ Undo Last Process', `
+      <p>This restores all students, the XP log, and the checklist inputs to exactly how they were <strong>before</strong> your last Process Daily XP.</p>
     `, [
       {
-        label: '⚡ Process Now',
-        class: 'btn-success',
+        label: '↩️ Undo It',
+        class: 'btn-warning',
         action: () => {
-          const result = Engine.processDailyXP();
-          if (result.levelUps.length) {
-            const names = result.levelUps.map(l => `${l.name} → Lv.${l.newLevel} (${l.title})`).join(', ');
-            UI.toast(`🎉 Level up! ${names}`, 'success');
-          }
-          if (result.processedCount > 0) {
-            UI.toast(`Processed ${result.processedCount} student(s)`, 'success');
-          } else {
-            UI.toast('No changes to process (all inputs empty)', 'info');
-          }
+          const ok = Engine.undoLastProcess();
           UI.renderTracker();
+          UI.toast(ok ? 'Reverted to before the last process' : 'Nothing to undo', ok ? 'success' : 'info');
         }
       },
       { label: 'Cancel', class: 'btn-secondary', action: () => {} }
@@ -387,6 +432,13 @@ function initModal() {
   if (overlay) overlay.addEventListener('click', (e) => {
     if (e.target === e.currentTarget) UI.closeModal();
   });
+}
+
+// ── Escape text for safe innerHTML interpolation ──
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
 }
 
 // ── File download helper ──

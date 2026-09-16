@@ -78,6 +78,12 @@ export function renderTracker() {
   const tbody = document.getElementById('tracker-body');
   tbody.innerHTML = '';
 
+  // Undo button only shows while a pre-process snapshot exists
+  const undoBtn = document.getElementById('btn-undo-process');
+  if (undoBtn) undoBtn.classList.toggle('hidden', !Store.getProcessSnapshot());
+
+  // TODO(future): derive empty-state colspans from the column list instead of hardcoding
+  // (tracker=9, daily=19, behavior=12) so they can't drift when columns change.
   if (students.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:#999">
       No students yet. Click <strong>+ Add Student</strong> to get started, or import from Google Sheets in Settings.
@@ -230,12 +236,30 @@ export function renderTracker() {
 }
 
 // ── Daily Checklist view ──
+function _renderDailyStatus() {
+  const el = document.getElementById('daily-status');
+  if (!el) return;
+  const today = Store.todayStr();
+  const last = Store.getLastProcessedDate();
+  const doneToday = last === today;
+  const lastLabel = last ? (doneToday ? 'today' : last) : 'never';
+  el.innerHTML = `
+    <span class="ds-chip">📅 Today: <strong>${esc(today)}</strong></span>
+    <span class="ds-chip ${doneToday ? 'ds-processed' : 'ds-pending'}">
+      ${doneToday ? '✓ Processed today' : '• Not yet processed today'}
+    </span>
+    <span class="ds-chip">Last processed: <strong>${esc(lastLabel)}</strong></span>
+  `;
+}
+
 export function renderDaily() {
   const students = Store.getStudents();
   const state = Store.getDailyState();
   const cfg = Store.getConfig();
   const tbody = document.getElementById('daily-body');
   tbody.innerHTML = '';
+
+  _renderDailyStatus();
 
   // Restore bonus values
   document.getElementById('bonusA').value = state._bonusA || 0;
@@ -403,6 +427,8 @@ function saveBehaviorFromDOM() {
 }
 
 // ── Leaderboard view ──
+// TODO(future): projector/presentation mode — full-screen, enlarged text, hide nav/header
+// for classroom display.
 export function renderLeaderboard() {
   const entries = Engine.buildLeaderboardData();
   const container = document.getElementById('leaderboard-container');
@@ -509,6 +535,8 @@ export function renderLeaderboard() {
 }
 
 // ── Currency view ──
+// TODO(future): configurable shop catalog — teacher-defined reward items with fixed
+// prices, shown as a dropdown on Spend instead of a freeform note.
 export function renderCurrency() {
   const students = Store.getStudents();
   const balances = Store.getCurrencyBalances();
